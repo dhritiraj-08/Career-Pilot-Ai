@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { ResumeArchitectResult } from "@/lib/validations/resume-architect";
 import { ResumeArchitectForm, type ResumeOption, type ResumeArchitectFormValues } from "./resume-architect-form";
-import { LoadingSteps } from "./loading-steps";
+import { LoadingSteps } from "@/components/shared/loading-steps";
 import { AtsScoreTab } from "./ats-score-tab";
 import { TailoredResumeTab } from "./tailored-resume-tab";
 import { CoverLetterTab } from "./cover-letter-tab";
@@ -55,7 +55,14 @@ export function ResumeArchitectClient({ resumes }: ResumeArchitectClientProps) {
 
       <div className="rounded-lg border border-border bg-card p-5">
         {isLoading ? (
-          <LoadingSteps />
+          <LoadingSteps
+            steps={[
+              "Analyzing your resume...",
+              "Matching with job requirements...",
+              "Generating tailored resume...",
+              "Writing cover letter...",
+            ]}
+          />
         ) : !result ? (
           <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
             <p className="max-w-xs text-sm text-muted-foreground">

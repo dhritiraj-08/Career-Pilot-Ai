@@ -1,8 +1,10 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { Controller, useForm } from "react-hook-form";
 import { FileText, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -16,6 +18,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/shared/empty-state";
+import { consumeResumeArchitectPrefill } from "@/lib/job-handoff";
 
 export interface ResumeOption {
   id: string;
@@ -42,10 +45,24 @@ export function ResumeArchitectForm({ resumes, isLoading, onSubmit }: ResumeArch
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<ResumeArchitectFormValues>({
     defaultValues: { resumeId: defaultResumeId, jobDescription: "", targetRole: "" },
   });
+
+  // One-time prefill from "Build Resume for This Job" (Job Hunter). Runs
+  // once on mount; consumeResumeArchitectPrefill() clears the stored
+  // value itself so a page refresh doesn't re-apply stale data.
+  React.useEffect(() => {
+    const prefill = consumeResumeArchitectPrefill();
+    if (prefill) {
+      setValue("jobDescription", prefill.jobDescription, { shouldValidate: true });
+      setValue("targetRole", prefill.targetRole, { shouldValidate: true });
+      toast.success("Job description loaded from Job Hunter");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (resumes.length === 0) {
     return (

@@ -337,7 +337,11 @@ create table public.job_applications (
   match_score        int check (match_score between 0 and 100),
   missing_skills     text[] not null default '{}',
   created_at         timestamptz not null default now(),
-  updated_at         timestamptz not null default now()
+  updated_at         timestamptz not null default now(),
+  -- One row per (user, listing): Save/Apply upsert against this pair
+  -- (job_listing_id null rows, e.g. manually-tracked applications, are
+  -- exempt — Postgres treats NULLs as distinct for uniqueness).
+  unique (user_id, job_listing_id)
 );
 
 create index idx_job_applications_user_id on public.job_applications(user_id);
@@ -677,6 +681,22 @@ grant all on all routines in schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public grant all on routines to anon, authenticated, service_role;
+
+-- =====================================================================
+-- Migration: job_applications unique(user_id, job_listing_id)
+--
+-- Added when building the Job Hunter agent (Save/Apply need to upsert
+-- against this pair to avoid duplicate rows for the same job). The
+-- create table statement above now includes it for fresh installs —
+-- if you already ran schema.sql before this, run this once against
+-- your existing database (safe if the table is still empty; if you've
+-- already got duplicate (user_id, job_listing_id) rows from testing,
+-- deduplicate those first or this will fail):
+--
+--   alter table public.job_applications
+--     add constraint job_applications_user_id_job_listing_id_key
+--     unique (user_id, job_listing_id);
+-- =====================================================================
 
 -- =====================================================================
 -- End of schema
