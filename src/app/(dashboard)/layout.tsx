@@ -26,6 +26,12 @@ export default function DashboardLayout({
         </Link>
         <nav className="flex items-center gap-4">
           <Link
+            href="/dashboard/resumes"
+            className="text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground"
+          >
+            Resumes
+          </Link>
+          <Link
             href="/dashboard/profile"
             className="text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground"
           >
