@@ -99,14 +99,18 @@ export function LoginForm() {
       const user = data.user;
       if (!user) throw new Error("Verification succeeded but no user was returned.");
 
-      const { data: profile } = await supabase
-        .from("profiles")
+      // job_preferences (not profiles) is the "onboarding complete" signal:
+      // Step 1 of onboarding creates a profiles row immediately, so a user
+      // who quit partway through would already have one. job_preferences
+      // is written last, at the final required step.
+      const { data: jobPreferences } = await supabase
+        .from("job_preferences")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
 
       router.refresh();
-      router.push(profile ? "/dashboard" : "/onboarding");
+      router.push(jobPreferences ? "/dashboard" : "/onboarding");
     } catch (err) {
       setOtp("");
       setOtpError(err instanceof Error ? err.message : "Invalid code. Please try again.");

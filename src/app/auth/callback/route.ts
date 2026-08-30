@@ -6,8 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 /**
  * Link-click fallback for the email OTP flow: if a user clicks the link
  * in their code email instead of typing the 6-digit code, this route
- * verifies it and routes the same way the typed-code flow does — new
- * user (no profile row yet) → onboarding, existing user → dashboard.
+ * verifies it and routes the same way the typed-code flow does — no
+ * job_preferences row yet → onboarding, otherwise → dashboard.
  *
  * Handles two link shapes:
  * - `token_hash` + `type` — what Supabase's email templates produce by
@@ -39,14 +39,14 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser();
 
     if (user) {
-      const { data: profile } = await supabase
-        .from("profiles")
+      const { data: jobPreferences } = await supabase
+        .from("job_preferences")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
 
       return NextResponse.redirect(
-        `${origin}${profile ? "/dashboard" : "/onboarding"}`
+        `${origin}${jobPreferences ? "/dashboard" : "/onboarding"}`
       );
     }
   }

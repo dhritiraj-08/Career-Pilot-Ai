@@ -21,18 +21,21 @@ export async function middleware(request: NextRequest) {
   }
 
   // / and /login bounce a logged-in user onward. Which page depends on
-  // whether they've completed onboarding — the same new-vs-existing
-  // check used right after OTP verification and in the auth callback —
-  // so a fresh sign-up doesn't get dropped on an empty dashboard.
+  // whether they've completed onboarding — the same check used right
+  // after OTP verification and in the auth callback. This checks
+  // job_preferences rather than profiles: onboarding's Step 1 creates a
+  // profiles row immediately (each step saves as you go), so profiles
+  // existing would incorrectly count someone who quit after Step 1 as
+  // "done." job_preferences is written last, at the final required step.
   if (AUTH_ENTRY_PATHS.includes(pathname) && user) {
-    const { data: profile } = await supabase
-      .from("profiles")
+    const { data: jobPreferences } = await supabase
+      .from("job_preferences")
       .select("id")
       .eq("user_id", user.id)
       .maybeSingle();
 
     return NextResponse.redirect(
-      new URL(profile ? "/dashboard" : "/onboarding", request.url)
+      new URL(jobPreferences ? "/dashboard" : "/onboarding", request.url)
     );
   }
 

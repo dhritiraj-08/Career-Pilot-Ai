@@ -654,6 +654,30 @@ create policy "notifications_update_own" on public.notifications
 create policy "notifications_delete_own" on public.notifications
   for delete using (auth.uid() = user_id);
 
+
+-- =====================================================================
+-- Grants
+--
+-- RLS policies above are the *second* gate: Postgres checks base table
+-- GRANTs first, and only evaluates RLS if that passes. Supabase's
+-- dashboard Table Editor applies these grants automatically when you
+-- create a table through it; raw SQL run through the SQL Editor (like
+-- this file) does not — without this section every request from
+-- `anon`/`authenticated` gets a blanket "permission denied" before RLS
+-- is ever consulted, and even `service_role` (which bypasses RLS via
+-- its BYPASSRLS attribute) still needs these base grants first.
+-- =====================================================================
+grant usage on schema public to anon, authenticated, service_role;
+grant all on all tables in schema public to anon, authenticated, service_role;
+grant all on all sequences in schema public to anon, authenticated, service_role;
+grant all on all routines in schema public to anon, authenticated, service_role;
+
+-- Applies the same grants to any table/sequence/function created later,
+-- so this doesn't have to be remembered and re-run for future tables.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant all on routines to anon, authenticated, service_role;
+
 -- =====================================================================
 -- End of schema
 -- =====================================================================

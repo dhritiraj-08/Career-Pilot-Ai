@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-// Treats "", null, undefined, and NaN (from RHF's valueAsNumber on an
-// empty <input type="number">) all as "not provided" before coercion,
-// so an optional numeric field doesn't fail validation when left blank.
-const optionalNumber = z.preprocess((val) => {
-  if (val === "" || val === null || val === undefined) return undefined;
-  if (typeof val === "number" && Number.isNaN(val)) return undefined;
-  return val;
-}, z.coerce.number().min(0).optional());
-
 // ---------------------------------------------------------------------
 // Step 1 — Basic Info
 // ---------------------------------------------------------------------
@@ -88,12 +79,17 @@ export const JOB_SEARCH_STATUSES = [
   { value: "not_looking", label: "Not looking" },
 ] as const;
 
+// min_salary/max_salary stay plain strings here, matching the raw
+// <input type="number"> value react-hook-form hands back — coercing to
+// a number inside the schema (via z.coerce/z.preprocess) fights
+// zodResolver's type inference. The numeric conversion happens once,
+// explicitly, in onboarding-wizard.tsx right before the Supabase write.
 export const jobPreferencesSchema = z
   .object({
     target_roles: z.array(z.string()).min(1, "Add at least one target role"),
     target_fields: z.array(z.string()).min(1, "Add at least one target field"),
-    min_salary: optionalNumber,
-    max_salary: optionalNumber,
+    min_salary: z.string().optional().or(z.literal("")),
+    max_salary: z.string().optional().or(z.literal("")),
     currency: z.string().min(1),
     work_mode: z.enum(WORK_MODES).optional(),
     preferred_locations: z.array(z.string()).min(1, "Add at least one preferred location"),
@@ -101,10 +97,11 @@ export const jobPreferencesSchema = z
     job_search_status: z.enum(["active", "passive", "not_looking"]),
   })
   .refine(
-    (data) =>
-      data.min_salary === undefined ||
-      data.max_salary === undefined ||
-      data.max_salary >= data.min_salary,
+    (data) => {
+      const min = data.min_salary ? Number(data.min_salary) : undefined;
+      const max = data.max_salary ? Number(data.max_salary) : undefined;
+      return min === undefined || max === undefined || max >= min;
+    },
     { message: "Max salary must be greater than or equal to min salary", path: ["max_salary"] }
   );
 export type JobPreferencesValues = z.infer<typeof jobPreferencesSchema>;
