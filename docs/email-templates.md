@@ -1,9 +1,16 @@
 # Supabase Email Templates — required setup
 
-CareerPilot AI's login is passwordless: users type a 6-digit code OR
-click the link in the same email — both must work. Supabase's default
-templates don't produce either correctly out of the box for this app.
-Run through this once per environment (local + any deployed project).
+CareerPilot AI has two sign-in paths that share these templates:
+- Email OTP (no password): users type a 6-digit code OR click the link
+  in the same email — both must work.
+- Email + password (primary as of the password-auth phase): signup
+  still sends one confirmation email (same "Confirm signup" template,
+  since `supabase.auth.signUp()` and OTP's `shouldCreateUser: true`
+  both trigger it); password reset uses a third template below.
+
+Supabase's default templates don't produce any of this correctly out
+of the box. Run through this once per environment (local + any
+deployed project).
 
 ## Why this is needed
 
@@ -44,6 +51,27 @@ Replace each template's body with:
 For the **"Confirm signup"** template specifically, change `type=email`
 to `type=signup` in the link (the `type` param must match what
 `verifyOtp` in `src/app/auth/callback/route.ts` is asked to verify).
+This same template now also fires for email/password sign-ups — the
+`{{ .Token }}` code just isn't needed for that flow, only the link;
+harmless to leave it in the email either way.
+
+## Third template: "Reset Password"
+
+Password recovery needs its own template (Dashboard → Authentication →
+Email Templates → **"Reset Password"**). Unlike the two above, there's
+no code to type here — link only, since `updateUser({ password })`
+needs an actual recovery session established server-side, not a
+typed token compared client-side:
+
+```html
+<h2>Reset your CareerPilot AI password</h2>
+<p><a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery">Reset your password</a></p>
+<p>If you didn't request this, you can safely ignore this email.</p>
+```
+
+`type=recovery` is what tells `src/app/auth/callback/route.ts` to
+redirect to `/auth/reset-password` instead of the normal dashboard/
+onboarding logic once verified.
 
 ## Verifying it worked
 
@@ -56,3 +84,11 @@ to `type=signup` in the link (the `type` param must match what
 4. If a link click ever fails, check the server logs for
    `[auth/callback]` lines — the route logs exactly why verification
    failed (see `src/app/auth/callback/route.ts`).
+5. Sign up with email + password (new email) → should get one
+   confirmation email; clicking it lands on `/onboarding`.
+6. Sign in with email + password (existing account) → straight to
+   `/dashboard` (or `/onboarding` if `job_preferences` doesn't exist
+   yet), no email round-trip at all.
+7. Click "Forgot password?" → submit an existing email → click the
+   reset link in the email → should land on `/auth/reset-password`
+   with an active session, not the dashboard.

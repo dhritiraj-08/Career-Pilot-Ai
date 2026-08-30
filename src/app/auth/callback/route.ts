@@ -7,7 +7,12 @@ import { createClient } from "@/lib/supabase/server";
  * Link-click fallback for the email OTP flow: if a user clicks the link
  * in their code email instead of typing the 6-digit code, this route
  * verifies it and routes the same way the typed-code flow does — no
- * job_preferences row yet → onboarding, otherwise → dashboard.
+ * job_preferences row yet → onboarding, otherwise → dashboard. Also
+ * handles email/password signup confirmation (type=signup) and password
+ * recovery links (type=recovery), which route to /auth/reset-password
+ * instead — a recovery token establishes a session, but that session
+ * exists to let the user set a new password, not to drop them straight
+ * into the dashboard.
  *
  * Handles two link shapes:
  * - `token_hash` + `type` — what Supabase's email templates produce by
@@ -46,6 +51,10 @@ export async function GET(request: Request) {
   }
 
   if (verified) {
+    if (type === "recovery") {
+      return NextResponse.redirect(`${origin}/auth/reset-password`);
+    }
+
     const {
       data: { user },
     } = await supabase.auth.getUser();

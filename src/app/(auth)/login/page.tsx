@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { LoginForm } from "@/components/auth/login-form";
+import { LoginTabs } from "@/components/auth/login-tabs";
 
 export const metadata: Metadata = {
   title: "Sign in — CareerPilot AI",
@@ -23,11 +23,11 @@ export default function LoginPage({
 
       {searchParams.error && (
         <div className="mb-6 w-full max-w-sm rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-center text-sm text-destructive">
-          That link didn&apos;t work or has expired. Please request a new code.
+          That link didn&apos;t work or has expired. Please try again.
         </div>
       )}
 
-      <LoginForm />
+      <LoginTabs />
 
       <p className="mt-10 max-w-sm text-center text-xs text-muted-foreground">
         By continuing, you agree that CareerPilot AI will use your email to

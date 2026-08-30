@@ -20,7 +20,14 @@ const RESEND_COOLDOWN_SECONDS = 30;
 
 type Step = "email" | "otp";
 
-export function LoginForm() {
+interface LoginFormProps {
+  /** Hides the icon+heading block — used when this is embedded as the
+   * secondary "prefer a sign-in link" option inside SignInForm, which
+   * already has its own tab-level heading. */
+  compact?: boolean;
+}
+
+export function LoginForm({ compact = false }: LoginFormProps) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -155,18 +162,20 @@ export function LoginForm() {
             animate="visible"
             exit={{ opacity: 0, transition: { duration: 0.15 } }}
           >
-            <div className="mb-8 text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-primary">
-                <Mail className="h-5 w-5 text-white" />
+            {!compact && (
+              <div className="mb-8 text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-primary">
+                  <Mail className="h-5 w-5 text-white" />
+                </div>
+                <h1 className="font-heading text-2xl font-semibold text-foreground">
+                  Welcome to CareerPilot AI
+                </h1>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Enter your email — we&apos;ll send you a one-time code. No
+                  password needed.
+                </p>
               </div>
-              <h1 className="font-heading text-2xl font-semibold text-foreground">
-                Welcome to CareerPilot AI
-              </h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Enter your email — we&apos;ll send you a one-time code. No
-                password needed.
-              </p>
-            </div>
+            )}
             <form onSubmit={handleSubmit(onEmailSubmit)} className="space-y-4" noValidate>
               <div className="space-y-2">
                 <Label htmlFor="email">Email address</Label>
@@ -202,9 +211,11 @@ export function LoginForm() {
             exit={{ opacity: 0, transition: { duration: 0.15 } }}
           >
             <div className="mb-8 text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-primary">
-                <ShieldCheck className="h-5 w-5 text-white" />
-              </div>
+              {!compact && (
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-primary">
+                  <ShieldCheck className="h-5 w-5 text-white" />
+                </div>
+              )}
               <h1 className="font-heading text-2xl font-semibold text-foreground">
                 Enter your code
               </h1>
