@@ -22,3 +22,13 @@ export const staggerContainer: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.06 } },
 };
+
+// "AI is working" indicator — first real use is the resume-parsing
+// loading state (Phase 5), matching the "agent thinking" pulse
+// described in docs/design-system.md §4.
+export const pulseGlow: Variants = {
+  animate: {
+    opacity: [0.5, 1, 0.5],
+    transition: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
+  },
+};

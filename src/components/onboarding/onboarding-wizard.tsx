@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
@@ -14,7 +14,9 @@ import type {
   JobPreferencesValues,
   SocialLinksValues,
 } from "@/lib/validations/onboarding";
+import type { ParsedResumeProfile } from "@/lib/validations/resume-parse";
 import { ProgressBar } from "./progress-bar";
+import { StepResumeUpload } from "./step-resume-upload";
 import { StepBasicInfo } from "./step-basic-info";
 import { StepExperience } from "./step-experience";
 import { StepSkills } from "./step-skills";
@@ -23,6 +25,7 @@ import { StepJobPreferences } from "./step-job-preferences";
 import { StepSocialLinks } from "./step-social-links";
 
 const STEP_LABELS = [
+  "Resume",
   "Basic Info",
   "Experience",
   "Skills",
@@ -46,10 +49,11 @@ interface OnboardingWizardProps {
   initialData: OnboardingInitialData;
 }
 
-const slideVariants = {
-  enter: (dir: number) => ({ x: dir > 0 ? 40 : -40, opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit: (dir: number) => ({ x: dir > 0 ? -40 : 40, opacity: 0 }),
+// Enter-only fade/slide for step transitions — see the comment above
+// the motion.div below for why there's no exit animation.
+const stepVariants: Variants = {
+  hidden: { opacity: 0, y: 8 },
+  visible: { opacity: 1, y: 0 },
 };
 
 export function OnboardingWizard({ userId, email, initialData }: OnboardingWizardProps) {
@@ -57,22 +61,24 @@ export function OnboardingWizard({ userId, email, initialData }: OnboardingWizar
   const supabase = createClient();
 
   const [step, setStep] = React.useState(0);
-  const [direction, setDirection] = React.useState(1);
   const [isSaving, setIsSaving] = React.useState(false);
+  // Seeded from the server-fetched prop, but mutable: the Resume step
+  // can fill this in mid-flow before any of the pre-fillable steps have
+  // mounted (see the merge handler below for why that ordering matters).
+  const [prefill, setPrefill] = React.useState<OnboardingInitialData>(initialData);
 
   const goBack = () => {
-    setDirection(-1);
     setStep((s) => Math.max(s - 1, 0));
   };
 
-  /** Runs a Supabase write, then advances to the next step — or, on the
-   * final step, redirects to /dashboard. Shared by every step's save
-   * (and by Skip, which just passes a no-op). */
+  /** Runs a step's Supabase write, then advances — or, on the final
+   * step, redirects to /dashboard. Shared by every step's save (and by
+   * Skip / the resume-parse merge, which just pass a no-op / state
+   * update instead of a network call). */
   const withSave = async (fn: () => Promise<void>) => {
     setIsSaving(true);
     try {
       await fn();
-      setDirection(1);
       if (step === STEP_LABELS.length - 1) {
         toast.success("You're all set!");
         router.push("/dashboard");
@@ -87,6 +93,27 @@ export function OnboardingWizard({ userId, email, initialData }: OnboardingWizar
       setIsSaving(false);
     }
   };
+
+  const skip = () => withSave(async () => {});
+
+  /** The uploaded PDF is already saved to the Resume Vault by the API
+   * route by this point — this just merges the parsed fields into the
+   * steps that haven't mounted yet. Basic Info/Experience/Social Links
+   * take the parsed values outright (a resume upload represents "start
+   * from this"); skills/education only overwrite if the parse actually
+   * found something, so a fallback-path empty array doesn't wipe out
+   * data already saved from a previous onboarding attempt. */
+  const handleResumeParsed = (_resumeId: string, profile: ParsedResumeProfile) =>
+    withSave(async () => {
+      setPrefill((prev) => ({
+        ...prev,
+        basicInfo: { ...prev.basicInfo, ...profile.basicInfo },
+        experience: { ...prev.experience, ...profile.experience },
+        skills: profile.skills.length > 0 ? profile.skills : prev.skills,
+        education: profile.education.length > 0 ? profile.education : prev.education,
+        socialLinks: { ...prev.socialLinks, ...profile.socialLinks },
+      }));
+    });
 
   const saveBasicInfo = (values: BasicInfoValues) =>
     withSave(async () => {
@@ -186,71 +213,78 @@ export function OnboardingWizard({ userId, email, initialData }: OnboardingWizar
       if (error) throw error;
     });
 
-  const skip = () => withSave(async () => {});
-
   return (
     <div className="mx-auto w-full max-w-lg">
       <div className="mb-8">
         <ProgressBar steps={STEP_LABELS} currentStep={step} />
       </div>
 
-      <AnimatePresence mode="wait" custom={direction}>
-        <motion.div
-          key={step}
-          custom={direction}
-          variants={slideVariants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-        >
-          {step === 0 && (
-            <StepBasicInfo defaultValues={initialData.basicInfo} onNext={saveBasicInfo} isSaving={isSaving} />
-          )}
-          {step === 1 && (
-            <StepExperience
-              defaultValues={initialData.experience}
-              onNext={saveExperience}
-              onBack={goBack}
-              onSkip={skip}
-              isSaving={isSaving}
-            />
-          )}
-          {step === 2 && (
-            <StepSkills
-              defaultValue={initialData.skills}
-              onNext={saveSkills}
-              onBack={goBack}
-              isSaving={isSaving}
-            />
-          )}
-          {step === 3 && (
-            <StepEducation
-              defaultValue={initialData.education}
-              onNext={saveEducation}
-              onBack={goBack}
-              isSaving={isSaving}
-            />
-          )}
-          {step === 4 && (
-            <StepJobPreferences
-              defaultValues={initialData.jobPreferences}
-              onNext={saveJobPreferences}
-              onBack={goBack}
-              isSaving={isSaving}
-            />
-          )}
-          {step === 5 && (
-            <StepSocialLinks
-              defaultValues={initialData.socialLinks}
-              onNext={saveSocialLinks}
-              onBack={goBack}
-              onSkip={skip}
-              isSaving={isSaving}
-            />
-          )}
-        </motion.div>
-      </AnimatePresence>
+      {/* No AnimatePresence / exit animation here on purpose. Two earlier
+          attempts (direction-aware custom-prop variants with
+          mode="wait"; then plain variants with mode="popLayout") both
+          intermittently left the outgoing step frozen on screen at full
+          opacity, overlapping the incoming one, indefinitely — React
+          state (confirmed via direct inspection) advanced correctly
+          every time, so the bug was specifically in exit-animation
+          tracking, not step logic. Enter-only sidesteps that whole
+          mechanism: changing `key` unmounts the old step immediately
+          (a normal React unmount, no exit transition attempted) while
+          the new one fades in. Costs the fade/slide-out on the way out;
+          never gets stuck. */}
+      <motion.div
+        key={step}
+        variants={stepVariants}
+        initial="hidden"
+        animate="visible"
+        transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+      >
+        {step === 0 && <StepResumeUpload onParsed={handleResumeParsed} onSkip={skip} />}
+        {step === 1 && (
+          <StepBasicInfo defaultValues={prefill.basicInfo} onNext={saveBasicInfo} isSaving={isSaving} />
+        )}
+        {step === 2 && (
+          <StepExperience
+            defaultValues={prefill.experience}
+            onNext={saveExperience}
+            onBack={goBack}
+            onSkip={skip}
+            isSaving={isSaving}
+          />
+        )}
+        {step === 3 && (
+          <StepSkills
+            defaultValue={prefill.skills}
+            onNext={saveSkills}
+            onBack={goBack}
+            isSaving={isSaving}
+          />
+        )}
+        {step === 4 && (
+          <StepEducation
+            defaultValue={prefill.education}
+            onNext={saveEducation}
+            onBack={goBack}
+            isSaving={isSaving}
+          />
+        )}
+        {step === 5 && (
+          <StepJobPreferences
+            defaultValues={prefill.jobPreferences}
+            onNext={saveJobPreferences}
+            onBack={goBack}
+            isSaving={isSaving}
+          />
+        )}
+        {step === 6 && (
+          <StepSocialLinks
+            defaultValues={prefill.socialLinks}
+            onNext={saveSocialLinks}
+            onBack={goBack}
+            onSkip={skip}
+            isSaving={isSaving}
+          />
+        )}
+      </motion.div>
     </div>
   );
 }
