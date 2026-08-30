@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, MailCheck } from "lucide-react";
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 
 export function SignUpForm() {
+  const router = useRouter();
   const supabase = createClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
@@ -27,12 +29,28 @@ export function SignUpForm() {
   const onSubmit = async ({ email, password }: SignUpValues) => {
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
       });
       if (error) throw error;
+
+      // signUp()'s response shape depends on a project setting neither of
+      // us controls from here: with "Confirm email" ON, Supabase creates
+      // the user but withholds a session until the confirmation link is
+      // clicked (data.session is null) — that's the "check your email"
+      // case below. With it OFF, signUp() logs the user in immediately
+      // and returns a real session right here, with no email involved at
+      // all — that case needs to go straight to onboarding instead of
+      // sitting on a "check your email" screen for a mail that was never
+      // sent.
+      if (data.session) {
+        router.refresh();
+        router.push("/onboarding");
+        return;
+      }
+
       setSubmittedEmail(email);
     } catch (err) {
       toast.error("Couldn't create account", {
