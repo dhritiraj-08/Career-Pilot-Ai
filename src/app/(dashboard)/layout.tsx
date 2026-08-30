@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { SignOutButton } from "@/components/auth/sign-out-button";
 
 /**
@@ -19,10 +21,18 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen bg-background">
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
-        <span className="font-heading text-lg font-semibold text-foreground">
+        <Link href="/dashboard" className="font-heading text-lg font-semibold text-foreground">
           CareerPilot <span className="text-secondary">AI</span>
-        </span>
-        <SignOutButton />
+        </Link>
+        <nav className="flex items-center gap-4">
+          <Link
+            href="/dashboard/profile"
+            className="text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground"
+          >
+            Profile
+          </Link>
+          <SignOutButton />
+        </nav>
       </header>
       <main className="p-6">{children}</main>
     </div>
