@@ -2,22 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * CareerPilot AI design tokens — see docs/design-system.md.
+ * Dark-only theme for now; values live under :root (not a `.dark`
+ * class) so a future light palette can be added without restructuring.
+ * All values are HSL triplets (no hsl() wrapper) for Tailwind's
+ * hsl(var(--x) / <alpha-value>) opacity syntax.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: 216 33% 3%; /* #05070A — bg-base */
+  --foreground: 216 33% 97%; /* #F5F7FA — text-primary */
+
+  --card: 216 29% 7%; /* #0C1016 — bg-surface */
+  --card-foreground: 216 33% 97%;
+
+  --popover: 214 26% 11%; /* #141A22 — bg-elevated */
+  --popover-foreground: 216 33% 97%;
+
+  --primary: 252 96% 68%; /* #7C5CFC — accent-primary */
+  --primary-foreground: 216 33% 97%;
+
+  --secondary: 190 100% 50%; /* #00D4FF — accent-secondary */
+  --secondary-foreground: 216 33% 3%;
+
+  --muted: 216 29% 7%;
+  --muted-foreground: 216 17% 44%; /* #5C6B82 — text-muted */
+
+  --accent: 214 26% 11%;
+  --accent-foreground: 216 33% 97%;
+
+  --destructive: 352 90% 62%; /* #F5455C — error */
+  --destructive-foreground: 216 33% 97%;
+
+  --success: 142 71% 45%; /* #22C55E */
+  --success-foreground: 216 33% 97%;
+
+  --warning: 37 91% 55%; /* #F5A623 */
+  --warning-foreground: 216 33% 3%;
+
+  --border: 215 24% 14%; /* #1B222C — border-subtle */
+  --border-strong: 217 21% 21%; /* #2A3341 */
+  --input: 215 24% 14%;
+  --ring: 252 96% 68%;
+
+  --radius: 0.625rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: hsl(var(--border));
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
 @layer utilities {

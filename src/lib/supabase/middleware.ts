@@ -1,15 +1,25 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 /**
- * Refreshes the Supabase auth session on every request.
+ * Refreshes the Supabase auth session on every request and hands back
+ * everything root middleware needs to make a routing decision: the
+ * (possibly updated) response, the current user (if any), and the
+ * Supabase client used to resolve it — reuse `supabase` for any further
+ * reads in the same request instead of creating a second client.
  *
  * Server Components can't write cookies, so an expiring session would
- * never get renewed without this running in root middleware (added in
- * Phase 1, once route protection rules exist). Call `updateSession`
- * from `src/middleware.ts` and return the response it gives back.
+ * never get renewed without this running in root middleware. Call
+ * `updateSession` from `src/middleware.ts` and return `response`
+ * (after any further route-protection logic) so the refreshed session
+ * cookie actually reaches the browser.
  */
-export async function updateSession(request: NextRequest) {
+export async function updateSession(request: NextRequest): Promise<{
+  response: NextResponse;
+  user: User | null;
+  supabase: SupabaseClient;
+}> {
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -42,7 +52,9 @@ export async function updateSession(request: NextRequest) {
   // IMPORTANT: getUser() (not getSession()) revalidates the token against
   // Supabase Auth on every call, which is what actually triggers a refresh
   // of an expired session cookie.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  return response;
+  return { response, user, supabase };
 }
