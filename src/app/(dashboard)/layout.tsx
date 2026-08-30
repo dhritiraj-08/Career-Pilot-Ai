@@ -1,46 +1,46 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { SignOutButton } from "@/components/auth/sign-out-button";
+import { createClient } from "@/lib/supabase/server";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 
 /**
- * Placeholder shell for Phase 1. Confirms the auth flow lands
- * authenticated users somewhere real; the actual sidebar/dashboard
- * chrome from docs/folder-structure.md is built in a later phase.
- *
- * Every page under here is per-user and session-dependent, so it must
- * never be statically prerendered — force-dynamic also means `next build`
- * doesn't need real Supabase credentials just to build.
+ * Shared shell for every /dashboard/* page (dashboard, profile,
+ * resumes, ...). Every page under here is per-user and session-
+ * dependent, so it must never be statically prerendered —
+ * force-dynamic also means `next build` doesn't need real Supabase
+ * credentials just to build.
  */
 export const dynamic = "force-dynamic";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Middleware already guards every /dashboard/* route; this is a
+  // defensive fallback, not the primary gate.
+  if (!user) {
+    redirect("/login");
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, avatar_url")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
   return (
-    <div className="min-h-screen bg-background">
-      <header className="flex items-center justify-between border-b border-border px-6 py-4">
-        <Link href="/dashboard" className="font-heading text-lg font-semibold text-foreground">
-          CareerPilot <span className="text-secondary">AI</span>
-        </Link>
-        <nav className="flex items-center gap-4">
-          <Link
-            href="/dashboard/resumes"
-            className="text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground"
-          >
-            Resumes
-          </Link>
-          <Link
-            href="/dashboard/profile"
-            className="text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground"
-          >
-            Profile
-          </Link>
-          <SignOutButton />
-        </nav>
-      </header>
-      <main className="p-6">{children}</main>
-    </div>
+    <DashboardShell
+      fullName={profile?.full_name ?? ""}
+      avatarUrl={profile?.avatar_url ?? null}
+      email={user.email ?? null}
+    >
+      {children}
+    </DashboardShell>
   );
 }

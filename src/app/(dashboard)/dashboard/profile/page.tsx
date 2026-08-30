@@ -3,7 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ProfilePageClient, type ProfilePageData } from "@/components/profile/profile-page-client";
 
-export default async function ProfilePage() {
+export default async function ProfilePage({
+  searchParams,
+}: {
+  searchParams: { tab?: string };
+}) {
   const supabase = createClient();
   const {
     data: { user },
@@ -81,7 +85,7 @@ export default async function ProfilePage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <h1 className="mb-6 font-heading text-2xl font-semibold text-foreground">Your profile</h1>
-      <ProfilePageClient initial={initial} />
+      <ProfilePageClient initial={initial} initialTab={searchParams.tab} />
     </div>
   );
 }

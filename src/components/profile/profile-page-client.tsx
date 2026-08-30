@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { computeProfileCompletion } from "@/lib/profile-completion";
 import type { OverviewValues } from "@/lib/validations/profile";
 import type { JobPreferencesValues, SocialLinksValues } from "@/lib/validations/onboarding";
 import { ProfileSidebar } from "./profile-sidebar";
@@ -24,22 +25,37 @@ export interface ProfilePageData {
   socialLinks: SocialLinksValues;
 }
 
-function computeCompletion(data: ProfilePageData) {
-  const checks = [
-    !!data.avatarUrl,
-    !!(data.overview.full_name && data.overview.phone && data.overview.city),
-    !!(data.overview.current_job_role || data.overview.current_company || data.overview.years_experience > 0),
-    data.skills.length > 0,
-    data.education.length > 0,
-    data.jobPreferences.target_roles.length > 0,
-    !!(data.socialLinks.linkedin_url || data.socialLinks.github_url || data.socialLinks.portfolio_url),
-  ];
-  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+const VALID_TABS = ["overview", "skills", "education", "certifications", "preferences", "links"];
+
+interface ProfilePageClientProps {
+  initial: ProfilePageData;
+  /** From /dashboard's "fix this" links (?tab=skills etc.) so a user
+   * jumps straight to the relevant section instead of always landing
+   * on Overview. */
+  initialTab?: string;
 }
 
-export function ProfilePageClient({ initial }: { initial: ProfilePageData }) {
+export function ProfilePageClient({ initial, initialTab }: ProfilePageClientProps) {
   const [data, setData] = React.useState(initial);
-  const completion = computeCompletion(data);
+  const defaultTab = initialTab && VALID_TABS.includes(initialTab) ? initialTab : "overview";
+
+  const { percent: completion } = computeProfileCompletion({
+    hasAvatar: !!data.avatarUrl,
+    hasBasicInfo: !!(data.overview.full_name && data.overview.phone && data.overview.city),
+    hasExperience: !!(
+      data.overview.current_job_role ||
+      data.overview.current_company ||
+      data.overview.years_experience > 0
+    ),
+    hasSkills: data.skills.length > 0,
+    hasEducation: data.education.length > 0,
+    hasJobPreferences: data.jobPreferences.target_roles.length > 0,
+    hasSocialLinks: !!(
+      data.socialLinks.linkedin_url ||
+      data.socialLinks.github_url ||
+      data.socialLinks.portfolio_url
+    ),
+  });
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
@@ -56,7 +72,7 @@ export function ProfilePageClient({ initial }: { initial: ProfilePageData }) {
         onAvatarUploaded={(url) => setData((d) => ({ ...d, avatarUrl: url }))}
       />
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue={defaultTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="skills">Skills</TabsTrigger>
