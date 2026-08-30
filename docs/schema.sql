@@ -39,7 +39,7 @@ create table public.profiles (
   linkedin_url      text,
   portfolio_url     text,
   years_experience  numeric(4,1) default 0,
-  current_role      text,
+  current_job_role  text,
   current_company   text,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
