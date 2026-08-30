@@ -56,7 +56,16 @@ export function LoginForm() {
   const sendOtp = async (targetEmail: string) => {
     const { error } = await supabase.auth.signInWithOtp({
       email: targetEmail,
-      options: { shouldCreateUser: true },
+      options: {
+        shouldCreateUser: true,
+        // Without this, Supabase's confirmation link redirects back to
+        // the bare Site URL after its own server-side verification —
+        // never to our callback route, so clicking the link does
+        // nothing. This is required even with Site URL/Redirect URLs
+        // correctly configured; those control what's *allowed*, not
+        // what this specific call's link target is.
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
     });
     if (error) throw error;
   };

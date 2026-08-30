@@ -27,10 +27,22 @@ export async function GET(request: Request) {
 
   if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+    if (error) console.error("[auth/callback] verifyOtp failed:", error.message);
     verified = !error;
   } else if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) console.error("[auth/callback] exchangeCodeForSession failed:", error.message);
     verified = !error;
+  } else {
+    // Neither param was present — most commonly because the email link
+    // came from Supabase's own hosted verify redirect landing back here
+    // as a URL fragment (#access_token=...) rather than a query param.
+    // Fragments never reach the server. See docs/email-templates.md for
+    // the template setup that avoids this entirely.
+    console.error(
+      "[auth/callback] no token_hash/type or code param on the request:",
+      request.url
+    );
   }
 
   if (verified) {
@@ -49,7 +61,8 @@ export async function GET(request: Request) {
         `${origin}${jobPreferences ? "/dashboard" : "/onboarding"}`
       );
     }
+    console.error("[auth/callback] verification succeeded but getUser() returned no user");
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_error`);
+  return NextResponse.redirect(`${origin}/login?error=auth`);
 }
