@@ -2,7 +2,11 @@ import "server-only";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
-const DEFAULT_TIMEOUT_MS = 30_000;
+// 30s was too aggressive for this free-tier model on a larger prompt —
+// observed a real analysis call abort at 30s in testing (not a model
+// error, just slow), incorrectly triggering the fallback for what
+// would otherwise have been a successful response.
+const DEFAULT_TIMEOUT_MS = 45_000;
 
 export interface OpenRouterMessage {
   role: "system" | "user" | "assistant";
