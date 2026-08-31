@@ -1,5 +1,17 @@
 import { DocumentTab } from "./document-tab";
 
-export function TailoredResumeTab({ content }: { content: string }) {
-  return <DocumentTab title="Tailored Resume" filename="tailored-resume.pdf" content={content} />;
+interface TailoredResumeTabProps {
+  content: string;
+  candidateName: string;
+}
+
+export function TailoredResumeTab({ content, candidateName }: TailoredResumeTabProps) {
+  return (
+    <DocumentTab
+      documentType="resume"
+      filename="tailored-resume.pdf"
+      candidateName={candidateName}
+      content={content}
+    />
+  );
 }

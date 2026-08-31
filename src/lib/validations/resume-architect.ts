@@ -16,6 +16,7 @@ export interface ScoreBreakdown {
 }
 
 export interface ResumeArchitectResult {
+  candidateName: string;
   atsScore: number;
   scoreBreakdown: ScoreBreakdown;
   keywordsFound: string[];

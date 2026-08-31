@@ -196,6 +196,7 @@ export async function POST(request: Request) {
   }
 
   const result: ResumeArchitectResult = {
+    candidateName: ctx.fullName || "Your Name",
     atsScore: analysis.atsScore,
     scoreBreakdown: analysis.scoreBreakdown,
     keywordsFound: analysis.keywordsFound,

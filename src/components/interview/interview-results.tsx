@@ -27,51 +27,6 @@ const TYPE_LABEL: Record<string, string> = {
   aptitude: "Aptitude",
 };
 
-function buildReportText(data: InterviewResultResponse): string {
-  const { session, questions } = data;
-  const lines: string[] = [];
-  lines.push(`Mock Interview Report — ${session.jobTitle ?? "Untitled role"}`);
-  lines.push(`Date: ${new Date(session.createdAt).toLocaleDateString()}`);
-  if (session.durationMinutes) lines.push(`Duration: ${session.durationMinutes} min`);
-  lines.push("");
-  lines.push(`Overall score: ${session.overallScore ?? "-"}/100`);
-  lines.push(`Technical: ${session.technicalScore ?? "-"}/100`);
-  lines.push(`Communication: ${session.communicationScore ?? "-"}/100`);
-  lines.push(`Confidence: ${session.confidenceScore ?? "-"}/100`);
-  lines.push("");
-  if (session.summary) {
-    lines.push("Summary:");
-    lines.push(session.summary);
-    lines.push("");
-  }
-  if (session.strengths.length > 0) {
-    lines.push("Strengths:");
-    session.strengths.forEach((s) => lines.push(`- ${s}`));
-    lines.push("");
-  }
-  if (session.weaknesses.length > 0) {
-    lines.push("Weaknesses:");
-    session.weaknesses.forEach((w) => lines.push(`- ${w}`));
-    lines.push("");
-  }
-  if (session.recommendations.length > 0) {
-    lines.push("Recommendations:");
-    session.recommendations.forEach((r) => lines.push(`- ${r}`));
-    lines.push("");
-  }
-  lines.push("Per-question review:");
-  questions.forEach((q, i) => {
-    lines.push("");
-    lines.push(`Q${i + 1} (${TYPE_LABEL[q.type] ?? q.type}): ${q.question}`);
-    lines.push(`Your answer: ${q.answer?.text || "(no answer given)"}`);
-    if (q.answer) {
-      lines.push(`Score: ${q.answer.score ?? "-"}/100`);
-      lines.push(`Feedback: ${q.answer.feedback ?? ""}`);
-    }
-  });
-  return lines.join("\n");
-}
-
 export function InterviewResults({ sessionId, onStartNew }: InterviewResultsProps) {
   const [data, setData] = React.useState<InterviewResultResponse | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -104,12 +59,8 @@ export function InterviewResults({ sessionId, onStartNew }: InterviewResultsProp
     if (!data) return;
     setIsDownloading(true);
     try {
-      const { downloadTextAsPdf } = await import("@/lib/pdf");
-      await downloadTextAsPdf(
-        `interview-report-${sessionId.slice(0, 8)}.pdf`,
-        `Mock Interview Report — ${data.session.jobTitle ?? ""}`,
-        buildReportText(data)
-      );
+      const { downloadInterviewReportPdf } = await import("@/lib/pdf");
+      await downloadInterviewReportPdf(`interview-report-${sessionId.slice(0, 8)}.pdf`, data);
     } finally {
       setIsDownloading(false);
     }

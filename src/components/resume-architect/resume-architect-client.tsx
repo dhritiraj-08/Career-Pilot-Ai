@@ -82,10 +82,10 @@ export function ResumeArchitectClient({ resumes }: ResumeArchitectClientProps) {
               <AtsScoreTab result={result} />
             </TabsContent>
             <TabsContent value="resume">
-              <TailoredResumeTab content={result.tailoredResumeContent} />
+              <TailoredResumeTab content={result.tailoredResumeContent} candidateName={result.candidateName} />
             </TabsContent>
             <TabsContent value="cover-letter">
-              <CoverLetterTab content={result.coverLetterContent} />
+              <CoverLetterTab content={result.coverLetterContent} candidateName={result.candidateName} />
             </TabsContent>
             <TabsContent value="recommendations">
               <RecommendationsTab recommendations={result.recommendations} />
