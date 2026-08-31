@@ -2,7 +2,7 @@ import { Check, X } from "lucide-react";
 
 import type { ResumeArchitectResult } from "@/lib/validations/resume-architect";
 import { ScoreCircle } from "./score-circle";
-import { ScoreBar } from "./score-bar";
+import { ScoreBar } from "@/components/shared/score-bar";
 
 export function AtsScoreTab({ result }: { result: ResumeArchitectResult }) {
   return (

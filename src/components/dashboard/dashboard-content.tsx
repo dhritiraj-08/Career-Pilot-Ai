@@ -30,7 +30,7 @@ interface DashboardContentProps {
 
 const QUICK_ACTIONS = [
   { label: "Find Jobs", icon: Search, href: "/dashboard/jobs" },
-  { label: "Practice Interview", icon: Mic, comingSoon: true },
+  { label: "Practice Interview", icon: Mic, href: "/dashboard/interview" },
   { label: "Build Resume", icon: FileText, href: "/dashboard/resumes" },
   { label: "View Roadmap", icon: Map, comingSoon: true },
 ] as const;

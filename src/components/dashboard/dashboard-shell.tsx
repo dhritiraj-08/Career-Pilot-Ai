@@ -22,7 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Resumes", href: "/dashboard/resumes", icon: FileText },
   { label: "Resume Architect", href: "/dashboard/resume-architect", icon: Sparkles },
   { label: "Jobs", href: "/dashboard/jobs", icon: Briefcase },
-  { label: "Interview", href: "/dashboard/interview", icon: MessageSquare, comingSoon: true },
+  { label: "Interview", href: "/dashboard/interview", icon: MessageSquare },
   { label: "Roadmap", href: "/dashboard/roadmap", icon: Map, comingSoon: true },
 ];
 

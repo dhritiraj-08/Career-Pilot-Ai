@@ -19,7 +19,20 @@ interface CallOpenRouterOptions {
   temperature?: number;
   jsonMode?: boolean;
   timeoutMs?: number;
+  maxTokens?: number;
 }
+
+// The default model is a reasoning model — its "thinking" tokens count
+// against the same completion budget as the actual answer. Observed
+// live: an identical prompt shape sometimes finishes with plenty of
+// room to spare (a few hundred tokens) and sometimes comes back with an
+// empty `content` and only a `reasoning` field, presumably because the
+// provider's own default cap was hit mid-thought before any real
+// content was emitted. Setting an explicit, generous max_tokens is a
+// cheap defensive fix either way — it costs nothing on requests that
+// were already going to finish well under this, and gives the
+// reasoning phase enough room on the ones that weren't.
+const DEFAULT_MAX_TOKENS = 4096;
 
 /**
  * Thin OpenRouter chat-completion client. Server-only (the `server-only`
@@ -37,6 +50,7 @@ export async function callOpenRouter({
   temperature = 0.2,
   jsonMode = false,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  maxTokens = DEFAULT_MAX_TOKENS,
 }: CallOpenRouterOptions): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -59,6 +73,7 @@ export async function callOpenRouter({
         model: model || process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
         messages,
         temperature,
+        max_tokens: maxTokens,
         ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
       }),
       signal: controller.signal,
