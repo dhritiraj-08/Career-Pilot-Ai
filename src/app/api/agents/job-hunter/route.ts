@@ -12,6 +12,7 @@ interface RequestBody {
   location?: string;
   role?: string;
   minSalary?: number | null;
+  indiaFriendlyOnly?: boolean;
 }
 
 const VALID_WORK_MODES = new Set(["remote", "hybrid", "onsite"]);
@@ -33,6 +34,7 @@ export interface JobHunterResultItem {
   matchedSkills: string[];
   missingSkills: string[];
   matchReasons: string[];
+  regionRestriction: string | null;
   applicationStatus: "saved" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn" | null;
 }
 
@@ -66,6 +68,7 @@ export async function POST(request: Request) {
   const location = body?.location?.trim() ?? "";
   const role = body?.role?.trim() ?? "";
   const minSalary = typeof body?.minSalary === "number" && body.minSalary > 0 ? body.minSalary : null;
+  const indiaFriendlyOnly = body?.indiaFriendlyOnly === true;
 
   // Both sources are remote-only. If the user asked for onsite alone
   // (no remote/hybrid also selected), no listing here can ever satisfy
@@ -192,10 +195,12 @@ export async function POST(request: Request) {
         matchedSkills: scored.matchedSkills,
         missingSkills: scored.missingSkills,
         matchReasons: scored.matchReasons,
+        regionRestriction: scored.regionRestriction,
         applicationStatus: (statusByListingId.get(id) as JobHunterResultItem["applicationStatus"]) ?? null,
       };
     })
     .filter((r): r is JobHunterResultItem => r !== null)
+    .filter((r) => !indiaFriendlyOnly || r.regionRestriction === null)
     .sort((a, b) => b.score - a.score);
 
   await supabase.from("agent_activities").insert({

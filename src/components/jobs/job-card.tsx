@@ -124,6 +124,11 @@ export function JobCard({ job, onStatusChange }: JobCardProps) {
               <MapPin className="h-3 w-3" /> {job.location ?? "Remote"}
             </span>
             <span className="rounded-full bg-accent px-2 py-0.5 font-medium text-foreground">Remote</span>
+            {job.regionRestriction && (
+              <span className="rounded-full bg-warning/15 px-2 py-0.5 font-medium text-warning">
+                {job.regionRestriction}
+              </span>
+            )}
             {posted && <span>· {posted}</span>}
           </div>
           {salary && <p className="mt-2 text-sm font-medium text-foreground">{salary}</p>}

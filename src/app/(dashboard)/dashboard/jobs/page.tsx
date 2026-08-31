@@ -25,6 +25,11 @@ export default async function JobsPage() {
     location: preferences?.preferred_locations?.[0] ?? "",
     role: preferences?.target_roles?.[0] ?? "",
     minSalary: preferences?.min_salary ? String(preferences.min_salary) : "",
+    // CareerPilot AI is built for Indian job seekers, so default to
+    // hiding listings that explicitly exclude India — a user who wants
+    // to see everything (including region-restricted listings) can
+    // uncheck it per search.
+    indiaFriendlyOnly: true,
   };
 
   return (

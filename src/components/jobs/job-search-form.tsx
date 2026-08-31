@@ -16,6 +16,7 @@ export interface JobSearchFilters {
   location: string;
   role: string;
   minSalary: string;
+  indiaFriendlyOnly: boolean;
 }
 
 const WORK_MODE_OPTIONS: { value: WorkMode; label: string }[] = [
@@ -110,6 +111,21 @@ export function JobSearchForm({ defaultFilters, isLoading, onSearch }: JobSearch
           onChange={(e) => setFilters((prev) => ({ ...prev, minSalary: e.target.value }))}
         />
       </div>
+
+      <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5">
+        <input
+          type="checkbox"
+          checked={filters.indiaFriendlyOnly}
+          onChange={(e) => setFilters((prev) => ({ ...prev, indiaFriendlyOnly: e.target.checked }))}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-border-strong accent-secondary"
+        />
+        <span className="text-sm text-foreground">
+          Only show India-friendly listings
+          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+            Hides listings explicitly restricted to other regions (e.g. &quot;North America only&quot;)
+          </span>
+        </span>
+      </label>
 
       <Button
         type="button"

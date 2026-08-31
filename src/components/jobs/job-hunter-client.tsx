@@ -27,6 +27,7 @@ export function JobHunterClient({ defaultFilters }: JobHunterClientProps) {
           location: filters.location,
           role: filters.role,
           minSalary: filters.minSalary ? Number(filters.minSalary) : null,
+          indiaFriendlyOnly: filters.indiaFriendlyOnly,
         }),
       });
       const data = await res.json();

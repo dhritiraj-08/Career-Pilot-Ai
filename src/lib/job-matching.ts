@@ -24,12 +24,59 @@ export interface JobScore {
   matchedSkills: string[];
   missingSkills: string[];
   matchReasons: string[];
+  /** Human-readable region restriction found in the job's own location
+   * text (e.g. "North America only"), or null if none was detected. See
+   * getRegionRestriction() — this is what drives both the location
+   * sub-score and the india-friendly filter. */
+  regionRestriction: string | null;
   breakdown: {
     skills: number;
     role: number;
     location: number;
     salary: number;
   };
+}
+
+// WeWorkRemotely in particular routinely restricts "remote" listings to
+// a specific region (its <region> field), which RemoteOK/WWR being
+// "remote" says nothing about — a listing can be 100% remote and still
+// exclude India entirely. These are the phrasings actually observed
+// from WWR's region field and RemoteOK's location field; matched
+// case-insensitively against the raw text, not a fixed enum, since
+// neither source documents a closed set of values.
+const EXCLUSIVE_REGION_PATTERNS: { pattern: RegExp; label: string }[] = [
+  { pattern: /\bnorth america\b/i, label: "North America only" },
+  { pattern: /\bus\s*(\/|,|\band\b|\bor\b)\s*canada\b/i, label: "US/Canada only" },
+  { pattern: /\b(u\.?s\.?a?)\s*(\bonly\b|\btimezone)/i, label: "US only" },
+  { pattern: /\bcanada\s*only\b/i, label: "Canada only" },
+  { pattern: /\b(uk|united kingdom)\s*only\b/i, label: "UK only" },
+  { pattern: /\beurope(an union)?\s*only\b/i, label: "Europe only" },
+  { pattern: /\bemea\s*only\b/i, label: "EMEA only" },
+  { pattern: /\blatam\b|\blatin america\s*only\b/i, label: "LatAm only" },
+  { pattern: /\bapac\s*only\b/i, label: "APAC only" },
+  { pattern: /\baustralia\s*only\b/i, label: "Australia only" },
+];
+
+/**
+ * Looks for an explicit region restriction in a job's own location text
+ * that would exclude an India-based candidate. Deliberately conservative:
+ * only known, explicit "X only" / region-name phrasings count — a job
+ * with an empty, vague, or "Worldwide"/"Anywhere" location is treated as
+ * unrestricted rather than guessed at either way. If the location
+ * mentions India directly, that always wins over any other match (a
+ * listing open to "India, US, and Europe" is not exclusionary).
+ */
+export function getRegionRestriction(location: string | null | undefined): string | null {
+  if (!location) return null;
+  if (/india/i.test(location)) return null;
+  for (const { pattern, label } of EXCLUSIVE_REGION_PATTERNS) {
+    if (pattern.test(location)) return label;
+  }
+  return null;
+}
+
+export function isIndiaFriendly(location: string | null | undefined): boolean {
+  return getRegionRestriction(location) === null;
 }
 
 const WORD_SPLIT = /[^a-z0-9+#.]+/;
@@ -114,11 +161,18 @@ function scoreLocation(
     return 0;
   }
 
+  // A region restriction that excludes India overrides everything else
+  // here — a job restricted to "North America only" isn't a better or
+  // worse match depending on what location text was typed in, it's
+  // simply not available to an India-based candidate.
+  if (getRegionRestriction(job.location) !== null) return 5;
+
   if (!location.trim()) return 70; // no location preference stated — decent default
 
   const jobLocation = (job.location ?? "").toLowerCase();
   const wanted = location.toLowerCase().trim();
 
+  if (jobLocation.includes("india")) return 100;
   if (!jobLocation) return 50;
   if (jobLocation.includes(wanted)) return 100;
   if (jobLocation.includes("worldwide") || jobLocation.includes("anywhere")) return 80;
@@ -151,7 +205,12 @@ export function scoreJob(job: NormalizedJob, criteria: CandidateSearchCriteria):
     (skillsResult.score + roleScore + locationScore + salaryScore) / 4
   );
 
+  const regionRestriction = getRegionRestriction(job.location);
+
   const matchReasons: string[] = [];
+  if (regionRestriction) {
+    matchReasons.push(`This listing is restricted to ${regionRestriction} — likely not open to India-based applicants.`);
+  }
   if (skillsResult.matched.length > 0) {
     matchReasons.push(
       `Matches ${skillsResult.matched.length} of ${jobSkills.length} skills this role is looking for.`
@@ -172,6 +231,7 @@ export function scoreJob(job: NormalizedJob, criteria: CandidateSearchCriteria):
     matchedSkills: skillsResult.matched,
     missingSkills: skillsResult.missing,
     matchReasons,
+    regionRestriction,
     breakdown: {
       skills: skillsResult.score,
       role: roleScore,
