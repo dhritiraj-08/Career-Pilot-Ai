@@ -37,6 +37,10 @@ export interface JobScore {
   };
 }
 
+// ---------------------------------------------------------------------
+// Region restriction (India-friendly filter)
+// ---------------------------------------------------------------------
+
 // WeWorkRemotely in particular routinely restricts "remote" listings to
 // a specific region (its <region> field), which RemoteOK/WWR being
 // "remote" says nothing about — a listing can be 100% remote and still
@@ -79,6 +83,123 @@ export function isIndiaFriendly(location: string | null | undefined): boolean {
   return getRegionRestriction(location) === null;
 }
 
+// ---------------------------------------------------------------------
+// Tech-relevance filter
+//
+// RemoteOK's public /api returns listings from every category it has —
+// not just software/tech (confirmed live: postings like "MOT Tester",
+// "Shunter", "Handyperson", "Residential Valuer" come back from the same
+// endpoint, some carrying RemoteOK's own literal "non tech" tag).
+// WeWorkRemotely's programming-category feed is mostly on-topic but not
+// perfectly curated either (it has surfaced things like "Counsel,
+// Product & Regulatory" and "Manager, Government Compliance"). Neither
+// of those is a scoring problem — they're not tech jobs at all, and no
+// amount of skill/role scoring should be dressing them up as a match.
+// ---------------------------------------------------------------------
+
+// RemoteOK tag vocabulary is free-form, but these show up consistently
+// on genuinely technical postings. Used as a positive signal, not an
+// exhaustive list — a job with no recognized tag either way falls back
+// to the title-based check below rather than being excluded on tag
+// absence alone.
+const TECH_TAGS = new Set([
+  "dev", "developer", "development", "engineer", "engineering", "backend", "back-end",
+  "frontend", "front-end", "full stack", "fullstack", "software", "programming",
+  "javascript", "typescript", "python", "java", "golang", "go", "rust", "php", "ruby",
+  "swift", "kotlin", "c++", "c#", ".net", "sql", "nosql", "database", "devops", "sre",
+  "cloud", "aws", "azure", "gcp", "kubernetes", "docker", "sys admin", "sysadmin",
+  "security", "infosec", "cyber security", "qa", "testing", "data", "data science",
+  "machine learning", "ai", "ml", "nlp", "computer vision", "api", "mobile", "ios",
+  "android", "web", "architecture", "architect", "cto", "technical", "ux", "ui",
+  "product design", "blockchain", "web3", "game dev", "embedded",
+]);
+
+// Title-based backstop, mainly for WeWorkRemotely (no tags at all) and
+// for RemoteOK jobs whose tags don't clearly say either way. Deliberately
+// specific phrases rather than bare words like "manager" or "tester" —
+// "Engineering Manager, AI" and "QA Engineer" must never be caught by
+// this, so generic role words are excluded unless combined with a
+// clearly non-technical qualifier.
+const NON_TECH_TITLE_PATTERNS: RegExp[] = [
+  /\bmot tester\b/i, /\bpat tester\b/i, /\bshunter\b/i, /\bhandyperson\b/i, /\bhandyman\b/i,
+  /\bcourier\b/i, /\bvaluer\b/i, /\b(store|retail|shift) clerk\b/i, /\bcdp\b/i,
+  /\benglish teacher\b/i, /\blegal counsel\b/i, /\bgovernment compliance\b/i,
+  /\brecruiter\b/i, /\bcustomer (service|support) (agent|rep)/i, /\bstore manager\b/i,
+  /\bvisual merchandiser\b/i, /\bmaintenance technician\b/i, /\bsales manager\b/i,
+  /\bmeat and seafood\b/i, /\bresidential valuer\b/i, /\bhotel\b/i, /\bresort\b/i,
+  /\bstore person\b/i, /\bparcel delivery\b/i, /\bdelivery driver\b/i, /\bpost office\b/i,
+  /\b(governance|risk and compliance|regulatory) analyst\b/i,
+  // WeWorkRemotely house filler/promo entries mixed into every category
+  // feed — not real job postings at all. The apostrophe in the raw feed
+  // has shown up mangled into up to three garbage characters (verified:
+  // "Don" + \xE2\x80\x99 misdecoded stacks into "â" + U+0080 + U+0099 +
+  // "t") — a genuine encoding issue in the feed itself, not something
+  // worth reverse-engineering, but this phrase is distinctive enough
+  // that matching a short run of any characters in its place is safe.
+  /don.{0,4}t see (a |your )?role/i,
+  // A recurring pattern of course/training-program ads (not employment
+  // listings) that have shown up riding along in the same feed.
+  /\b(course|curriculum) (director|writer|editor|designer)\b/i,
+];
+
+/**
+ * Whether a job looks like a software/tech role at all, independent of
+ * how well it matches this candidate. False excludes it from results
+ * entirely (see api/agents/job-hunter/route.ts) — this is a category
+ * check, not a relevance score, so "Store Manager" doesn't belong in a
+ * tech job search no matter how the scoring shakes out.
+ */
+export function isLikelyTechJob(job: NormalizedJob): boolean {
+  // Real job titles are essentially never this short — a handful of
+  // WeWorkRemotely entries have come back as bare fragments ("N A",
+  // "GA", "LEGO"), most likely from feed noise rather than a genuine
+  // posting. Filtered here rather than as a tech-relevance judgment,
+  // since these aren't really identifiable as a job at all.
+  if (job.title.trim().length < 5) return false;
+
+  // Title-based exclusion is checked first and wins outright.
+  // RemoteOK's own tags are demonstrably unreliable — live data has
+  // shown a "Post Office Manager" listing tagged "dev" and a
+  // "Governance Risk and Compliance Analyst" tagged "engineer"/"cloud".
+  // Tag presence alone can't be trusted to override an unambiguous
+  // non-tech title.
+  if (NON_TECH_TITLE_PATTERNS.some((p) => p.test(job.title))) return false;
+
+  // WeWorkRemotely never has tags (structural for that source, not a
+  // signal), but a genuine RemoteOK tech posting almost always carries
+  // several — real listings observed all session have 5-15. A RemoteOK
+  // job with literally zero tags is the anomaly, and in practice that
+  // anomaly has consistently been non-English or junk postings (a car
+  // detailing ad, a cook's personal listing, a tool-rental role) that
+  // the English title blocklist above has no way to catch.
+  if (job.source === "remoteok" && job.requirements.length === 0) return false;
+
+  const tagsLower = job.requirements.map((t) => t.toLowerCase());
+  if (tagsLower.includes("non tech")) return false;
+  if (tagsLower.some((t) => TECH_TAGS.has(t))) return true;
+
+  // No tags, or tags present but none recognized either way (RemoteOK's
+  // tag vocabulary is inconsistent) — default to including it rather
+  // than excluding on missing/ambiguous data.
+  return true;
+}
+
+// ---------------------------------------------------------------------
+// AI/ML role-family relevance
+// ---------------------------------------------------------------------
+
+const AI_ML_ROLE_PATTERN = /\b(ai|ml|machine learning|artificial intelligence|data scientist|data science|llm|nlp|deep learning|computer vision)\b/i;
+const AI_ML_JOB_SIGNAL = /\b(ai|ml|machine learning|artificial intelligence|data scien\w*|llm|nlp|deep learning|computer vision|neural network|generative ai|genai|large language model)\b/i;
+const SOFTWARE_ENGINEERING_SIGNAL = /\b(software engineer|developer|backend|front[- ]?end|full[- ]?stack|programmer|platform engineer|devops|infrastructure engineer|swe)\b/i;
+
+/** True when the candidate is specifically searching for an AI/ML-family
+ * role (their target role or current role names it), per the request:
+ * "if user target role is AI Engineer or ML Engineer, only show jobs
+ * related to AI, ML, LLM, data science, or software engineering." */
+function isAiMlRoleFamily(roles: string[], currentJobRole: string): boolean {
+  return [...roles, currentJobRole].some((r) => AI_ML_ROLE_PATTERN.test(r));
+}
+
 const WORD_SPLIT = /[^a-z0-9+#.]+/;
 
 function tokenize(text: string): string[] {
@@ -89,62 +210,115 @@ function tokenize(text: string): string[] {
     .filter(Boolean);
 }
 
+/** Escapes a skill name for use inside a RegExp, so names containing
+ * regex-special characters (c++, c#, node.js) don't throw or match the
+ * wrong thing. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
- * Resolves the skill keywords a job is looking for. RemoteOK jobs carry
- * real `requirements` tags; WeWorkRemotely doesn't, so for those we scan
- * the description for any of the *candidate's own* skill names — this
- * can only ever find skills the candidate already has, so it never
- * fabricates a "missing skill" out of thin air for that source. It's a
- * narrower signal than RemoteOK's, and that's an honest limitation of
- * the source, not something to paper over.
+ * Resolves the skill keywords a job is *explicitly* looking for.
+ * RemoteOK jobs carry real `requirements` tags — used as-is. WeWorkRemotely
+ * doesn't have anything structured, so there is no real "job requires
+ * these skills" list to return for it; see scoreSkills() for how that
+ * source is scored instead.
  */
-function resolveJobSkills(job: NormalizedJob, candidateSkills: string[]): string[] {
-  if (job.requirements.length > 0) {
-    return job.requirements;
-  }
-  if (!job.description) return [];
-  const descLower = job.description.toLowerCase();
-  return candidateSkills.filter((skill) => descLower.includes(skill));
+function resolveJobSkills(job: NormalizedJob): string[] {
+  return job.requirements;
+}
+
+/**
+ * Finds which of the candidate's own skills are mentioned in free text,
+ * using word-boundary matching (not substring) so short skill names like
+ * "git" or "sql" don't false-positive inside unrelated words ("digital",
+ * "results"). This is evidence of relevance, never a claim about what
+ * the job actually requires — WeWorkRemotely gives us no requirement
+ * list to compare against, so honesty here means reporting hits, not
+ * fabricating a completion percentage.
+ */
+function findMentionedSkills(text: string, candidateSkills: string[]): string[] {
+  const lower = text.toLowerCase();
+  return candidateSkills.filter((skill) => {
+    if (!skill) return false;
+    return new RegExp(`\\b${escapeRegExp(skill)}\\b`, "i").test(lower);
+  });
 }
 
 function scoreSkills(
-  jobSkills: string[],
+  job: NormalizedJob,
   candidateSkills: string[]
-): { score: number; matched: string[]; missing: string[] } {
-  if (jobSkills.length === 0) {
-    // No identifiable skill signal for this job — neutral score rather
-    // than penalizing it for a data gap that isn't the candidate's fault.
-    return { score: 60, matched: [], missing: [] };
+): { score: number; matched: string[]; missing: string[]; hadStructuredRequirements: boolean } {
+  const jobSkills = resolveJobSkills(job);
+
+  if (jobSkills.length > 0) {
+    // Real requirement list (RemoteOK) — a genuine coverage percentage.
+    const candidateSet = new Set(candidateSkills);
+    const matched = jobSkills.filter((s) => candidateSet.has(s));
+    const missing = jobSkills.filter((s) => !candidateSet.has(s));
+    return {
+      score: Math.round((matched.length / jobSkills.length) * 100),
+      matched,
+      missing,
+      hadStructuredRequirements: true,
+    };
   }
-  const candidateSet = new Set(candidateSkills);
-  const matched = jobSkills.filter((s) => candidateSet.has(s));
-  const missing = jobSkills.filter((s) => !candidateSet.has(s));
-  const score = Math.round((matched.length / jobSkills.length) * 100);
-  return { score, matched, missing };
+
+  // No requirement list to compare against (WeWorkRemotely). Score on
+  // how many distinct candidate skills actually show up in the
+  // description, word-boundary matched, on a saturating curve — never
+  // 100, because "found N of my own skills mentioned" is not the same
+  // claim as "meets 100% of this job's requirements", which we have no
+  // way to know for this source.
+  const mentioned = job.description ? findMentionedSkills(job.description, candidateSkills) : [];
+  const score = mentioned.length === 0 ? 45 : Math.min(45 + mentioned.length * 10, 85);
+  return { score, matched: mentioned, missing: [], hadStructuredRequirements: false };
 }
 
-function scoreRole(job: NormalizedJob, roles: string[], currentJobRole: string): number {
+function scoreRole(
+  job: NormalizedJob,
+  roles: string[],
+  currentJobRole: string,
+  aiMlFamily: boolean
+): number {
   const titleTokens = new Set(tokenize(job.title));
   const candidates = [...roles, currentJobRole].filter(Boolean);
-  if (candidates.length === 0 || titleTokens.size === 0) return 50;
 
   let best = 0;
-  for (const role of candidates) {
-    const roleLower = role.toLowerCase().trim();
-    if (roleLower && job.title.toLowerCase().includes(roleLower)) {
-      best = Math.max(best, 100);
-      continue;
+  if (candidates.length > 0 && titleTokens.size > 0) {
+    for (const role of candidates) {
+      const roleLower = role.toLowerCase().trim();
+      if (roleLower && job.title.toLowerCase().includes(roleLower)) {
+        best = Math.max(best, 100);
+        continue;
+      }
+      const roleTokens = tokenize(role);
+      if (roleTokens.length === 0) continue;
+      const overlap = roleTokens.filter((t) => titleTokens.has(t)).length;
+      const ratio = overlap / roleTokens.length;
+      best = Math.max(best, Math.round(ratio * 80)); // partial overlap tops out below a full phrase match
     }
-    const roleTokens = tokenize(role);
-    if (roleTokens.length === 0) continue;
-    const overlap = roleTokens.filter((t) => titleTokens.has(t)).length;
-    const ratio = overlap / roleTokens.length;
-    best = Math.max(best, Math.round(ratio * 80)); // partial overlap tops out below a full phrase match
+  } else {
+    best = 50; // no role stated to compare against — neutral, not a floor case
   }
-  // Never fully zero a role out — remote job titles vary a lot in
-  // wording for the same actual role, so an unrelated-looking title
-  // still gets a low-but-nonzero baseline.
-  return Math.max(best, 30);
+
+  if (!aiMlFamily) {
+    // General case: remote job titles vary a lot in wording for the
+    // same actual role, so never fully zero it out.
+    return Math.max(best, 30);
+  }
+
+  // Candidate is specifically searching for an AI/ML role: a title/role
+  // match alone isn't enough signal by itself (a generic "SDE" role
+  // string token-matches almost nothing usefully), so this also checks
+  // the job's own content for AI/ML or software-engineering signal and
+  // uses whichever is higher. Jobs with neither get a much lower floor
+  // than the general case — that's the actual "irrelevant industries
+  // should score much lower" behavior being asked for.
+  const haystack = `${job.title} ${job.description ?? ""}`;
+  if (AI_ML_JOB_SIGNAL.test(haystack)) best = Math.max(best, 90);
+  else if (SOFTWARE_ENGINEERING_SIGNAL.test(haystack)) best = Math.max(best, 55);
+  return Math.max(best, 15);
 }
 
 function scoreLocation(
@@ -195,9 +369,10 @@ function scoreSalary(job: NormalizedJob, minSalary: number | null, currency: str
 }
 
 export function scoreJob(job: NormalizedJob, criteria: CandidateSearchCriteria): JobScore {
-  const jobSkills = resolveJobSkills(job, criteria.skills);
-  const skillsResult = scoreSkills(jobSkills, criteria.skills);
-  const roleScore = scoreRole(job, criteria.roles, criteria.currentJobRole);
+  const aiMlFamily = isAiMlRoleFamily(criteria.roles, criteria.currentJobRole);
+
+  const skillsResult = scoreSkills(job, criteria.skills);
+  const roleScore = scoreRole(job, criteria.roles, criteria.currentJobRole, aiMlFamily);
   const locationScore = scoreLocation(job, criteria.workModes, criteria.location);
   const salaryScore = scoreSalary(job, criteria.minSalary, criteria.currency);
 
@@ -211,15 +386,25 @@ export function scoreJob(job: NormalizedJob, criteria: CandidateSearchCriteria):
   if (regionRestriction) {
     matchReasons.push(`This listing is restricted to ${regionRestriction} — likely not open to India-based applicants.`);
   }
-  if (skillsResult.matched.length > 0) {
+  if (skillsResult.hadStructuredRequirements) {
     matchReasons.push(
-      `Matches ${skillsResult.matched.length} of ${jobSkills.length} skills this role is looking for.`
+      `Matches ${skillsResult.matched.length} of ${skillsResult.matched.length + skillsResult.missing.length} skills this role is looking for.`
     );
-  } else if (jobSkills.length === 0) {
+  } else if (skillsResult.matched.length > 0) {
+    matchReasons.push(
+      `Mentions ${skillsResult.matched.length} of your skills, but this listing doesn't publish a structured requirements list — treat this as a signal, not a full skill match.`
+    );
+  } else {
     matchReasons.push("This listing doesn't specify required skills — scored on role and location instead.");
   }
-  if (roleScore >= 80) matchReasons.push("Job title closely matches your target role.");
-  else if (roleScore >= 50) matchReasons.push("Job title is a partial match for your target role.");
+  if (aiMlFamily) {
+    if (roleScore >= 85) matchReasons.push("This listing has clear AI/ML signal in its title or description.");
+    else if (roleScore <= 20) matchReasons.push("No AI/ML or software engineering signal found for this role search.");
+  } else if (roleScore >= 80) {
+    matchReasons.push("Job title closely matches your target role.");
+  } else if (roleScore >= 50) {
+    matchReasons.push("Job title is a partial match for your target role.");
+  }
   if (locationScore >= 80) matchReasons.push("Location fits your preference.");
   if (salaryScore >= 100) matchReasons.push("Salary range meets your minimum.");
   else if (salaryScore <= 55 && criteria.minSalary != null) {

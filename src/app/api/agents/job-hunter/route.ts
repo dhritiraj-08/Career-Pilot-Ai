@@ -5,7 +5,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchRemoteOkJobs } from "@/lib/job-sources/remoteok";
 import { fetchWeWorkRemotelyJobs } from "@/lib/job-sources/weworkremotely";
 import type { NormalizedJob } from "@/lib/job-sources/types";
-import { scoreJob, type CandidateSearchCriteria } from "@/lib/job-matching";
+import { scoreJob, isLikelyTechJob, type CandidateSearchCriteria } from "@/lib/job-matching";
+
+// Below this composite score, a listing is treated as not a real match
+// for this search rather than a low-ranked one — filtered out entirely
+// instead of shown at the bottom of the list.
+const MIN_MATCH_SCORE = 40;
 
 interface RequestBody {
   workModes?: string[];
@@ -108,10 +113,17 @@ export async function POST(request: Request) {
     fetchWeWorkRemotelyJobs(),
   ]);
 
+  // RemoteOK's /api returns listings from every category it has, not
+  // just software/tech (confirmed live: "MOT Tester", "Shunter",
+  // "Handyperson" come back from the same endpoint), and WeWorkRemotely's
+  // programming-category feed isn't perfectly curated either. Filtered
+  // out here, before upserting, so the shared catalog itself stays
+  // tech-relevant rather than accumulating jobs no search should ever
+  // surface.
   const normalizedJobs: NormalizedJob[] = [
     ...(remoteOkResult.status === "fulfilled" ? remoteOkResult.value : []),
     ...(wwrResult.status === "fulfilled" ? wwrResult.value : []),
-  ];
+  ].filter(isLikelyTechJob);
 
   if (remoteOkResult.status === "rejected") {
     console.error("[job-hunter] RemoteOK source rejected:", remoteOkResult.reason);
@@ -201,6 +213,7 @@ export async function POST(request: Request) {
     })
     .filter((r): r is JobHunterResultItem => r !== null)
     .filter((r) => !indiaFriendlyOnly || r.regionRestriction === null)
+    .filter((r) => r.score >= MIN_MATCH_SCORE)
     .sort((a, b) => b.score - a.score);
 
   await supabase.from("agent_activities").insert({
