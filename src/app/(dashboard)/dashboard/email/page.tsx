@@ -16,7 +16,7 @@ export default async function EmailPage() {
     redirect("/login");
   }
 
-  const [{ data: gmailToken }, { data: emailRows }, { data: applicationRows }] = await Promise.all([
+  const [{ data: gmailToken }, { data: emailRows }, { data: applicationRows }, { data: resumeRows }] = await Promise.all([
     supabase.from("oauth_tokens").select("email").eq("user_id", user.id).eq("provider", "gmail").maybeSingle(),
     supabase
       .from("emails")
@@ -28,6 +28,10 @@ export default async function EmailPage() {
       .from("job_applications")
       .select("id, status, applied_at, job_listings(company)")
       .eq("user_id", user.id),
+    // For the Compose modal's optional "reference a resume" picker —
+    // same id/name/is_primary shape the Interview and Resume Architect
+    // setup forms already use.
+    supabase.from("resumes").select("id, name, is_primary").eq("user_id", user.id).order("created_at", { ascending: false }),
   ]);
 
   const jobApplications = (applicationRows ?? []).map((a) => ({
@@ -50,6 +54,7 @@ export default async function EmailPage() {
         connectedEmail={gmailToken?.email ?? null}
         initialEmails={emailRows ?? []}
         initialDigest={digest}
+        resumes={resumeRows ?? []}
       />
     </div>
   );

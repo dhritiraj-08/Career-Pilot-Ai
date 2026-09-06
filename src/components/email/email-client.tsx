@@ -14,10 +14,17 @@ import { EmailCategoryPanel, type CategoryFilter } from "./email-category-panel"
 import { EmailList } from "./email-list";
 import { ComposeEmailModal } from "./compose-email-modal";
 
+export interface ComposeResumeOption {
+  id: string;
+  name: string;
+  is_primary: boolean;
+}
+
 interface EmailClientProps {
   connectedEmail: string | null;
   initialEmails: EmailRow[];
   initialDigest: DailyDigest;
+  resumes: ComposeResumeOption[];
 }
 
 const CONNECT_ERROR_MESSAGES: Record<string, string> = {
@@ -28,7 +35,7 @@ const CONNECT_ERROR_MESSAGES: Record<string, string> = {
   gmail_not_configured: "Gmail isn't configured on this server yet.",
 };
 
-export function EmailClient({ connectedEmail, initialEmails, initialDigest }: EmailClientProps) {
+export function EmailClient({ connectedEmail, initialEmails, initialDigest, resumes }: EmailClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [emails, setEmails] = React.useState(initialEmails);
@@ -142,7 +149,7 @@ export function EmailClient({ connectedEmail, initialEmails, initialDigest }: Em
         )}
       </div>
 
-      <ComposeEmailModal open={isComposeOpen} onOpenChange={setIsComposeOpen} onSent={handleSent} />
+      <ComposeEmailModal open={isComposeOpen} onOpenChange={setIsComposeOpen} onSent={handleSent} resumes={resumes} />
     </div>
   );
 }

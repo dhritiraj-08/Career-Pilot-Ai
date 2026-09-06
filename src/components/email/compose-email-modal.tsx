@@ -11,20 +11,34 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { COMPOSE_TYPES, COMPOSE_TYPE_LABELS, type ComposeType } from "@/lib/validations/email";
+import type { ComposeResumeOption } from "./email-client";
+
+// Radix Select items can't have an empty-string value — this sentinel
+// stands for "no resume selected" and is stripped back to undefined
+// before the request is sent.
+const NO_RESUME = "none";
 
 interface ComposeEmailModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSent: () => void;
+  resumes: ComposeResumeOption[];
 }
 
-export function ComposeEmailModal({ open, onOpenChange, onSent }: ComposeEmailModalProps) {
+export function ComposeEmailModal({ open, onOpenChange, onSent, resumes }: ComposeEmailModalProps) {
   const [to, setTo] = React.useState("");
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
@@ -33,6 +47,7 @@ export function ComposeEmailModal({ open, onOpenChange, onSent }: ComposeEmailMo
   const [role, setRole] = React.useState("");
   const [highlights, setHighlights] = React.useState("");
   const [recipientName, setRecipientName] = React.useState("");
+  const [resumeId, setResumeId] = React.useState(NO_RESUME);
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [isSending, setIsSending] = React.useState(false);
 
@@ -44,6 +59,7 @@ export function ComposeEmailModal({ open, onOpenChange, onSent }: ComposeEmailMo
     setRole("");
     setHighlights("");
     setRecipientName("");
+    setResumeId(NO_RESUME);
   };
 
   const handleGenerate = async () => {
@@ -52,7 +68,14 @@ export function ComposeEmailModal({ open, onOpenChange, onSent }: ComposeEmailMo
       const res = await fetch("/api/email/compose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: composeType, company, role, highlights, recipientName }),
+        body: JSON.stringify({
+          type: composeType,
+          company,
+          role,
+          highlights,
+          recipientName,
+          resumeId: resumeId === NO_RESUME ? undefined : resumeId,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Something went wrong");
@@ -147,12 +170,34 @@ export function ComposeEmailModal({ open, onOpenChange, onSent }: ComposeEmailMo
               <Input placeholder="Role" value={role} onChange={(e) => setRole(e.target.value)} />
             </div>
             <Input placeholder="Recipient name (optional)" value={recipientName} onChange={(e) => setRecipientName(e.target.value)} />
-            <Textarea
-              placeholder="Your resume bullet points / highlights to reference..."
-              className="min-h-[70px]"
-              value={highlights}
-              onChange={(e) => setHighlights(e.target.value)}
-            />
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Select resume to reference (optional)</Label>
+              <Select value={resumeId} onValueChange={setResumeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No resume" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_RESUME}>No resume</SelectItem>
+                  {resumes.map((resume) => (
+                    <SelectItem key={resume.id} value={resume.id}>
+                      {resume.name}
+                      {resume.is_primary ? " (Primary)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Key highlights to mention (optional)</Label>
+              <Textarea
+                placeholder="e.g. Built a RAG pipeline with LangChain, Led a team of 5 engineers, 8.4 CGPA..."
+                className="min-h-[70px]"
+                value={highlights}
+                onChange={(e) => setHighlights(e.target.value)}
+              />
+            </div>
             <Button type="button" variant="secondary" size="sm" className="w-full" onClick={handleGenerate} disabled={isGenerating}>
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
               {isGenerating ? "Generating..." : `Generate email for ${COMPOSE_TYPE_LABELS[composeType]}`}

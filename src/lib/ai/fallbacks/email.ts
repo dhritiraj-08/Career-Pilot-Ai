@@ -62,7 +62,8 @@ const COMPOSE_TEMPLATES: Record<ComposeType, (ctx: ComposeContext) => { subject:
 /** Real, if generic, templates built only from the context actually
  * given — used only if compose generation fails outright. */
 export function fallbackComposeEmail(type: ComposeType, ctx: ComposeContext) {
-  return COMPOSE_TEMPLATES[type](ctx);
+  const draft = COMPOSE_TEMPLATES[type](ctx);
+  return ctx.candidateName ? { ...draft, body: `${draft.body}\n${ctx.candidateName}` } : draft;
 }
 
 /** Used only if reply-suggestion generation fails outright — an

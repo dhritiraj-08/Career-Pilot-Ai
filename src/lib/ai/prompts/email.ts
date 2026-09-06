@@ -94,13 +94,27 @@ export interface ComposeContext {
   role: string;
   highlights: string;
   recipientName: string;
+  // Added for richer, personalized drafts — all optional, all pulled
+  // from real stored data (profile, skills, an actual resume file), never
+  // fabricated. buildComposeMessages includes whichever of these are
+  // non-empty rather than requiring the whole set.
+  candidateName: string;
+  currentJobRole: string;
+  currentCompany: string;
+  yearsExperience: number | null;
+  skills: string[];
+  /** Extracted text of a resume the user chose to reference (see
+   * api/email/compose's on-demand-extract-then-cache, same pattern as
+   * the Interview and Resume Architect routes). Already truncated by
+   * the caller — this file doesn't re-truncate. */
+  resumeText: string;
 }
 
 const TYPE_INSTRUCTIONS: Record<ComposeType, string> = {
-  application: "A cover-note style email accompanying a job application — concise, professional, expresses genuine interest in the role and connects the candidate's real highlights to it.",
-  followup: "A polite follow-up on an application or interview that's had no response in a while — brief, doesn't sound impatient or entitled, reaffirms interest.",
-  thankyou: "A thank-you note after an interview — genuine, references something specific from the conversation if given, reaffirms interest and fit.",
-  cold: "Cold outreach to someone at a company the candidate wants to work for — respectful of their time, states a clear, specific reason for reaching out, easy to say no to without being pushy.",
+  application: "a cover-note style email accompanying a job application — professional, expresses genuine, specific interest in the role and connects the candidate's real background to it",
+  followup: "a polite follow-up on an application or interview that's had no response in a while — doesn't sound impatient or entitled, reaffirms interest and fit",
+  thankyou: "a thank-you note after an interview — genuine, references something specific from the conversation if given, reaffirms interest and fit",
+  cold: "cold outreach to someone at a company the candidate wants to work for — respectful of their time, states a clear, specific reason for reaching out, easy to say no to without being pushy",
 };
 
 export interface OriginalEmail {
@@ -144,20 +158,37 @@ ${original.body.slice(0, 4000)}`,
 }
 
 export function buildComposeMessages(type: ComposeType, ctx: ComposeContext): OpenRouterMessage[] {
+  const backgroundLines = [
+    ctx.currentJobRole || ctx.currentCompany
+      ? `Current role: ${ctx.currentJobRole || "Not specified"}${ctx.currentCompany ? ` at ${ctx.currentCompany}` : ""}`
+      : null,
+    ctx.yearsExperience !== null ? `Years of experience: ${ctx.yearsExperience}` : null,
+    ctx.skills.length > 0 ? `Skills on file: ${ctx.skills.join(", ")}` : null,
+  ].filter(Boolean);
+
   return [
     {
       role: "system",
-      content: `You are a professional email writer for CareerPilot AI's Email Agent. Write ${TYPE_INSTRUCTIONS[type]}
+      content: `You are a professional email writer for CareerPilot AI's Email Agent. Write ${TYPE_INSTRUCTIONS[type]}.
+
+This needs to read like a strong, specific, professional email — not a short generic note. Structure the body as 4-5 substantial paragraphs (2-4 sentences each):
+1. Opening — express interest with a specific reason, not just "I am writing to express my interest."
+2. Highlight 2-3 of the candidate's most relevant experiences or achievements, drawn from their background below.
+3. Call out specific skills that match what the role needs.
+4. Why this company specifically — something concrete if given, otherwise genuine and specific-sounding rather than generic flattery.
+5. Closing — a clear call to action, availability for a conversation, and how to reach the candidate.
+
+(A follow-up or thank-you note can be a little shorter than a full application email, but should still be several real paragraphs, not one or two lines.)
 
 Respond with ONLY a single JSON object — no markdown fences, no commentary — matching exactly this shape:
 
 { "subject": string, "body": string }
 
 Rules:
-- Keep the body concise — 3-5 short paragraphs at most, ready to send as-is or lightly edited.
-- Only use facts given below — never invent specific achievements, employers, or numbers the candidate didn't provide.
-- No bracketed placeholders like [Company Name] — use the actual details given, and if something is missing, write around it generically rather than leaving a placeholder.
-- Plain text body (no markdown syntax), suitable for a real email.`,
+- Only use facts given below — never invent specific employers, achievements, or numbers the candidate didn't provide.
+- No bracketed placeholders like [Company Name] — use the actual details given, and if a whole category (a company-specific reason, a particular skill) has nothing to draw on, write that part in genuine, general terms rather than inventing specifics or leaving a placeholder.
+- Plain text body (no markdown syntax), ready to send as-is or lightly edited.
+- Sign off with the candidate's name if given, on its own line after a closing like "Best regards,".`,
     },
     {
       role: "user",
@@ -165,7 +196,10 @@ Rules:
 COMPANY: ${ctx.company || "Not specified"}
 ROLE: ${ctx.role || "Not specified"}
 RECIPIENT: ${ctx.recipientName || "Not specified — use a generic greeting"}
-CANDIDATE'S HIGHLIGHTS TO REFERENCE: ${ctx.highlights || "None given — keep it general"}`,
+CANDIDATE'S NAME: ${ctx.candidateName || "Not specified — omit the sign-off name"}
+${backgroundLines.length > 0 ? backgroundLines.join("\n") : "No profile background on file."}
+CANDIDATE'S OWN HIGHLIGHTS TO MENTION: ${ctx.highlights || "None given"}
+${ctx.resumeText ? `RESUME EXCERPT (pull 2-3 real, relevant experiences from this for paragraph 2):\n${ctx.resumeText}` : "No resume attached — rely on the background and highlights above."}`,
     },
   ];
 }
