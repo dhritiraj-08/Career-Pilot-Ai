@@ -13,13 +13,24 @@ export default async function InterviewPage() {
     redirect("/login");
   }
 
-  const [{ data: resumes }, { data: preferences }] = await Promise.all([
+  const [{ data: resumes }, { data: preferences }, { data: sessions }] = await Promise.all([
     supabase
       .from("resumes")
       .select("id, name, is_primary")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     supabase.from("job_preferences").select("target_roles").eq("user_id", user.id).maybeSingle(),
+    // Every session ever started, not just ones reached via a fresh
+    // setup submission — this is what makes a session Autopilot
+    // auto-creates on approval (see api/autopilot/approve) actually
+    // findable afterward instead of only reachable via the one-time
+    // notification link.
+    supabase
+      .from("interview_sessions")
+      .select("id, job_title, company, status, overall_score, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
 
   return (
@@ -28,6 +39,7 @@ export default async function InterviewPage() {
       <InterviewClient
         resumes={(resumes ?? []).map((r) => ({ id: r.id, name: r.name, isPrimary: r.is_primary }))}
         defaultTargetRole={preferences?.target_roles?.[0] ?? ""}
+        initialSessions={sessions ?? []}
       />
     </div>
   );

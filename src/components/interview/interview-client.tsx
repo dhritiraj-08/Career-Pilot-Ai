@@ -6,12 +6,14 @@ import { toast } from "sonner";
 
 import type { InterviewQuestionItem } from "@/lib/validations/interview";
 import { InterviewSetupForm, type ResumeOption, type InterviewSetupValues } from "./interview-setup-form";
+import { InterviewSessionsPanel, type InterviewSessionSummary } from "./interview-sessions-panel";
 import { InterviewRoom } from "./interview-room";
 import { InterviewResults } from "./interview-results";
 
 interface InterviewClientProps {
   resumes: ResumeOption[];
   defaultTargetRole: string;
+  initialSessions: InterviewSessionSummary[];
 }
 
 type Step =
@@ -20,42 +22,38 @@ type Step =
   | { name: "room"; sessionId: string; totalQuestions: number; question: InterviewQuestionItem }
   | { name: "results"; sessionId: string };
 
-export function InterviewClient({ resumes, defaultTargetRole }: InterviewClientProps) {
+export function InterviewClient({ resumes, defaultTargetRole, initialSessions }: InterviewClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const resumeSessionId = searchParams.get("sessionId");
   const [step, setStep] = React.useState<Step>(resumeSessionId ? { name: "loading" } : { name: "setup" });
   const [isStarting, setIsStarting] = React.useState(false);
+  const [sessions, setSessions] = React.useState(initialSessions);
 
-  // A link from elsewhere (Autopilot's "Interview prep ready"
-  // notification auto-creates a real session — see
-  // api/autopilot/approve) lands here with ?sessionId=... instead of
-  // the blank setup form.
+  // Shared by both the ?sessionId= deep link below (Autopilot's
+  // "Interview prep ready" notification, see api/autopilot/approve)
+  // and clicking a session in the Your Sessions panel — same resume
+  // logic either way.
+  const loadSession = React.useCallback(async (sessionId: string) => {
+    setStep({ name: "loading" });
+    try {
+      const res = await fetch(`/api/agents/interview/session/${sessionId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't load that interview session");
+      if (data.isComplete) {
+        setStep({ name: "results", sessionId: data.sessionId });
+      } else {
+        setStep({ name: "room", sessionId: data.sessionId, totalQuestions: data.totalQuestions, question: data.question });
+      }
+    } catch (err) {
+      toast.error("Couldn't load that interview", { description: err instanceof Error ? err.message : "Please try again." });
+      setStep({ name: "setup" });
+    }
+  }, []);
+
   React.useEffect(() => {
     if (!resumeSessionId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/agents/interview/session/${resumeSessionId}`);
-        const data = await res.json();
-        if (cancelled) return;
-        if (!res.ok) throw new Error(data.error ?? "Couldn't load that interview session");
-        if (data.isComplete) {
-          setStep({ name: "results", sessionId: data.sessionId });
-        } else {
-          setStep({ name: "room", sessionId: data.sessionId, totalQuestions: data.totalQuestions, question: data.question });
-        }
-      } catch (err) {
-        if (cancelled) return;
-        toast.error("Couldn't resume that interview", { description: err instanceof Error ? err.message : "Please try again." });
-        setStep({ name: "setup" });
-      } finally {
-        if (!cancelled) router.replace("/dashboard/interview");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    loadSession(resumeSessionId).finally(() => router.replace("/dashboard/interview"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeSessionId]);
 
@@ -76,6 +74,10 @@ export function InterviewClient({ resumes, defaultTargetRole }: InterviewClientP
         totalQuestions: data.totalQuestions,
         question: data.question,
       });
+      setSessions((prev) => [
+        { id: data.sessionId, job_title: values.targetRole, company: null, status: "in_progress", overall_score: null, created_at: new Date().toISOString() },
+        ...prev,
+      ]);
       if (data.usedFallback) {
         toast.warning("AI question generation was limited", {
           description: "Using a standard question set instead — try again shortly for fully tailored questions.",
@@ -118,11 +120,14 @@ export function InterviewClient({ resumes, defaultTargetRole }: InterviewClientP
   }
 
   return (
-    <InterviewSetupForm
-      resumes={resumes}
-      defaultTargetRole={defaultTargetRole}
-      isLoading={isStarting}
-      onSubmit={handleStart}
-    />
+    <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <InterviewSessionsPanel sessions={sessions} onSelect={loadSession} onNew={handleStartNew} />
+      <InterviewSetupForm
+        resumes={resumes}
+        defaultTargetRole={defaultTargetRole}
+        isLoading={isStarting}
+        onSubmit={handleStart}
+      />
+    </div>
   );
 }

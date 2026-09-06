@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ExternalLink, MessageSquare, Pencil, X } from "lucide-react";
+import { Check, ExternalLink, Map, MessageSquare, Pencil, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,7 @@ export function ApprovalCard({ approval, busy, onApprove, onReject }: ApprovalCa
   const missingRecipient = isPending && !approval.email_to;
   const applyUrl = approval.context?.applyUrl;
   const interviewSessionId = approval.context?.interviewSessionId;
+  const roadmapGoalId = approval.context?.roadmapGoalId;
 
   return (
     <div
@@ -77,6 +78,12 @@ export function ApprovalCard({ approval, busy, onApprove, onReject }: ApprovalCa
               >
                 <MessageSquare className="h-3 w-3" />
                 Interview prep ready
+              </a>
+            )}
+            {roadmapGoalId && (
+              <a href="/dashboard/roadmap" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                <Map className="h-3 w-3" />
+                Roadmap ready
               </a>
             )}
           </div>

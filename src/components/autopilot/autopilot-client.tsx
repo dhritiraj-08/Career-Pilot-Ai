@@ -205,8 +205,14 @@ export function AutopilotClient({
                 ...item,
                 status: "sent",
                 ...(edits ? { email_draft_subject: edits.subject, email_draft_body: edits.body, email_to: edits.to } : {}),
-                ...(data.interviewSessionId
-                  ? { context: { ...(item.context ?? {}), interviewSessionId: data.interviewSessionId } }
+                ...(data.interviewSessionId || data.roadmapGoalId
+                  ? {
+                      context: {
+                        ...(item.context ?? {}),
+                        ...(data.interviewSessionId ? { interviewSessionId: data.interviewSessionId } : {}),
+                        ...(data.roadmapGoalId ? { roadmapGoalId: data.roadmapGoalId } : {}),
+                      },
+                    }
                   : {}),
               },
               ...s,
@@ -214,7 +220,8 @@ export function AutopilotClient({
           }
           return prev.filter((a) => a.id !== id);
         });
-        toast.success(data.interviewSessionId ? "Sent — interview prep is ready too" : "Sent");
+        const extras = [data.interviewSessionId && "interview prep", data.roadmapGoalId && "a roadmap"].filter(Boolean);
+        toast.success(extras.length > 0 ? `Sent — ${extras.join(" and ")} ready too` : "Sent");
         router.refresh();
       } catch (err) {
         toast.error("Couldn't send", { description: err instanceof Error ? err.message : "Please try again." });

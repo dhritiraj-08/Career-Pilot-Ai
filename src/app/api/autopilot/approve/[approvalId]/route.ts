@@ -4,10 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidGmailToken } from "@/lib/gmail-tokens";
 import { sendGmailMessage } from "@/lib/gmail";
 import { runInterviewStart } from "@/lib/agents/interview";
+import { runRoadmapGeneration } from "@/lib/agents/roadmap";
 import type { EmailCategory } from "@/lib/validations/email";
 
-// Interview-prep question generation is its own LLM call on top of the
-// send itself.
+// Interview-prep question generation and roadmap generation are each
+// their own LLM call on top of the send itself.
 export const maxDuration = 60;
 
 const DEFAULT_INTERVIEW_TYPE = "mixed" as const;
@@ -143,14 +144,16 @@ export async function POST(request: Request, { params }: { params: { approvalId:
     details: { run_id: approval.run_id, approval_id: approval.id },
   });
 
-  // Approving a job application also preps for the interview that
-  // might follow — generates a real question set now (not a stub),
-  // using sensible defaults (a mixed technical/HR set, 10 questions)
-  // since nothing at approval time tells us which type/length the user
-  // would have picked on the Interview page themselves. Best-effort:
-  // the application was already sent above, so a failure here is
-  // logged and skipped rather than failing this whole request.
+  // Approving a job application also preps for what comes next — a
+  // real interview question set and a real career-roadmap goal, both
+  // tied to this exact listing (title/company/description), not stubs.
+  // Best-effort: the application was already sent above, so a failure
+  // in either of these is logged and skipped rather than failing this
+  // whole request.
   let interviewSessionId: string | null = null;
+  let roadmapGoalId: string | null = null;
+  let mergedContext = approvalContext as typeof approvalContext & { interviewSessionId?: string; roadmapGoalId?: string };
+
   if (approval.type === "job_application" && approval.job_listing_id && approval.resume_id) {
     const { data: listing } = await supabase
       .from("job_listings")
@@ -159,6 +162,9 @@ export async function POST(request: Request, { params }: { params: { approvalId:
       .maybeSingle();
 
     if (listing) {
+      // Sensible defaults (mixed technical/HR, 10 questions) since
+      // nothing at approval time tells us which type/length the user
+      // would have picked on the Interview page themselves.
       const interviewResult = await runInterviewStart(supabase, user.id, {
         resumeId: approval.resume_id,
         targetRole: listing.title,
@@ -172,14 +178,7 @@ export async function POST(request: Request, { params }: { params: { approvalId:
         console.error(`[autopilot] interview-prep failed for approval ${approval.id}:`, interviewResult.error);
       } else {
         interviewSessionId = interviewResult.sessionId;
-
-        // Folded into the approval's own context so its card in the
-        // Sent section can show an "Interview prep ready" link too,
-        // not just the standalone notification.
-        await supabase
-          .from("autopilot_approvals")
-          .update({ context: { ...approvalContext, interviewSessionId } })
-          .eq("id", approval.id);
+        mergedContext = { ...mergedContext, interviewSessionId };
 
         await supabase.from("notifications").insert({
           user_id: user.id,
@@ -197,8 +196,52 @@ export async function POST(request: Request, { params }: { params: { approvalId:
           details: { run_id: approval.run_id, approval_id: approval.id },
         });
       }
+
+      // A dedicated goal for this specific application — real data
+      // only: the actual role/company/JD and the date it was sent, no
+      // fabricated deadline (job_listings has no application-deadline
+      // field, so target_date is left null rather than inventing one;
+      // the roadmap generator defaults to a 4-week plan in that case).
+      const sentOn = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      const roadmapResult = await runRoadmapGeneration(supabase, user.id, {
+        title: `${listing.title} at ${listing.company}`,
+        description:
+          `Application sent to ${listing.company} for ${listing.title} on ${sentOn}.` +
+          (listing.description ? `\n\nJob description:\n${listing.description.slice(0, 3000)}` : ""),
+        targetDate: null,
+        goalType: "job",
+      });
+
+      if ("error" in roadmapResult) {
+        console.error(`[autopilot] roadmap generation failed for approval ${approval.id}:`, roadmapResult.error);
+      } else {
+        roadmapGoalId = roadmapResult.goalId;
+        mergedContext = { ...mergedContext, roadmapGoalId };
+
+        await supabase.from("notifications").insert({
+          user_id: user.id,
+          title: `Roadmap ready for ${listing.company}`,
+          message: `A ${roadmapResult.weeks.length}-week plan for ${listing.title} is on your Roadmap page.`,
+          type: "info",
+          link: "/dashboard/roadmap",
+        });
+
+        await supabase.from("agent_activities").insert({
+          user_id: user.id,
+          agent_name: "orchestrator",
+          action: `Built a roadmap for ${listing.title} at ${listing.company}`,
+          status: "success",
+          details: { run_id: approval.run_id, approval_id: approval.id, goalId: roadmapGoalId },
+        });
+      }
     }
   }
 
-  return NextResponse.json({ success: true, messageId: sent.id, interviewSessionId });
+  if (interviewSessionId || roadmapGoalId) {
+    // Folded into the approval's own context so its card in the Sent
+    // section can show these links too, not just the notifications.
+    await supabase.from("autopilot_approvals").update({ context: mergedContext }).eq("id", approval.id);
+  }
+
+  return NextResponse.json({ success: true, messageId: sent.id, interviewSessionId, roadmapGoalId });
 }
