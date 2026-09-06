@@ -10,7 +10,8 @@ import { ParametersPanel } from "./parameters-panel";
 import { NotificationCenter } from "./notification-center";
 import { ActivityFeed, type ActivityEntry } from "./activity-feed";
 
-const POLL_INTERVAL_MS = 3000;
+const STATUS_POLL_INTERVAL_MS = 3000;
+const APPROVALS_POLL_INTERVAL_MS = 5000;
 
 interface AutopilotClientProps {
   initialRun: AutopilotRunRow | null;
@@ -92,13 +93,38 @@ export function AutopilotClient({
     };
 
     poll();
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
+    const interval = setInterval(poll, STATUS_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run?.id, run?.status]);
+
+  // Separate from the status/activity poll above: the run route drafts
+  // approvals one job at a time, often minutes apart for a run with
+  // several matches (see the real timestamps in autopilot_approvals —
+  // roughly a minute apart per job, since each one is its own resume
+  // tailoring + compose pass). Without this, the Activity Feed would
+  // show "Draft ready..." live while the Notification Center kept
+  // showing whatever was pending when the page loaded, only catching up
+  // once the entire run finished. Polls independently of the status
+  // loop so a new draft appears (and starts pulsing) within 5s of being
+  // created, not only at the end of a run that can take several minutes.
+  React.useEffect(() => {
+    if (run?.status !== "running") return;
+    let cancelled = false;
+
+    refreshApprovals();
+    const interval = setInterval(() => {
+      if (!cancelled) refreshApprovals();
+    }, APPROVALS_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [run?.status, refreshApprovals]);
 
   const handleRun = async () => {
     setIsStarting(true);
