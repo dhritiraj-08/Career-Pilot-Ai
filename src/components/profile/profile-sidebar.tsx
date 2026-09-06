@@ -1,7 +1,7 @@
 "use client";
 
 import { AvatarUploader } from "./avatar-uploader";
-import { CompletionRing } from "./completion-ring";
+import { CompletionRing } from "@/components/shared/completion-ring";
 
 interface ProfileSidebarProps {
   userId: string;

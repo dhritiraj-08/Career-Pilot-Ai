@@ -23,7 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Resume Architect", href: "/dashboard/resume-architect", icon: Sparkles },
   { label: "Jobs", href: "/dashboard/jobs", icon: Briefcase },
   { label: "Interview", href: "/dashboard/interview", icon: MessageSquare },
-  { label: "Roadmap", href: "/dashboard/roadmap", icon: Map, comingSoon: true },
+  { label: "Roadmap", href: "/dashboard/roadmap", icon: Map },
 ];
 
 interface DashboardShellProps {

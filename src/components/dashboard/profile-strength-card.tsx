@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Check, ChevronRight } from "lucide-react";
 
-import { CompletionRing } from "@/components/profile/completion-ring";
+import { CompletionRing } from "@/components/shared/completion-ring";
 import type { CompletionItem } from "@/lib/profile-completion";
 
 interface ProfileStrengthCardProps {

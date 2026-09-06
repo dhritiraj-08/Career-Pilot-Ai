@@ -41,6 +41,7 @@ create table public.profiles (
   years_experience  numeric(4,1) default 0,
   current_job_role  text,
   current_company   text,
+  xp                int not null default 0,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
@@ -580,6 +581,12 @@ create table public.roadmap_steps (
                  check (status in ('not_started', 'in_progress', 'completed', 'skipped')),
   due_date       date,
   completed_at   timestamptz,
+  -- One roadmap_steps row is one task; week_number groups tasks into
+  -- the "week by week" view and focus_area is that week's theme,
+  -- denormalized onto every task row in it rather than a separate
+  -- weeks table (see docs on the Roadmap agent).
+  week_number    int,
+  focus_area     text,
   created_at     timestamptz not null default now()
 );
 
@@ -696,6 +703,27 @@ alter default privileges in schema public grant all on routines to anon, authent
 --   alter table public.job_applications
 --     add constraint job_applications_user_id_job_listing_id_key
 --     unique (user_id, job_listing_id);
+-- =====================================================================
+
+-- =====================================================================
+-- Migration: profiles.xp, roadmap_steps.week_number/focus_area
+--
+-- Added when building the Career Roadmap agent. profiles.xp powers the
+-- XP awarded when a roadmap task is marked complete; roadmap_steps'
+-- two new columns group tasks into the "week by week" timeline (see
+-- the roadmap_steps comment above). The create table statements above
+-- now include all three for fresh installs — if you already ran
+-- schema.sql before this, run this once against your existing
+-- database BEFORE using the Roadmap feature. week_number/focus_area
+-- are required — roadmap creation writes them on every task row, so
+-- it fails outright without this migration. xp is the one part of
+-- this that degrades gracefully on its own (task completion still
+-- works, XP awarding is skipped and logged instead of failing the
+-- request) since it's a separate, non-critical update:
+--
+--   alter table public.profiles add column if not exists xp int not null default 0;
+--   alter table public.roadmap_steps add column if not exists week_number int;
+--   alter table public.roadmap_steps add column if not exists focus_area text;
 -- =====================================================================
 
 -- =====================================================================

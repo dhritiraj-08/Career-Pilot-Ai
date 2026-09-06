@@ -32,7 +32,7 @@ const QUICK_ACTIONS = [
   { label: "Find Jobs", icon: Search, href: "/dashboard/jobs" },
   { label: "Practice Interview", icon: Mic, href: "/dashboard/interview" },
   { label: "Build Resume", icon: FileText, href: "/dashboard/resumes" },
-  { label: "View Roadmap", icon: Map, comingSoon: true },
+  { label: "View Roadmap", icon: Map, href: "/dashboard/roadmap" },
 ] as const;
 
 export function DashboardContent({
