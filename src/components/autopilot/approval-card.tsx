@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, ExternalLink, MessageSquare, Pencil, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,8 @@ export function ApprovalCard({ approval, busy, onApprove, onReject }: ApprovalCa
   const company = approval.context?.company ?? "Unknown company";
   const role = approval.context?.role ?? "";
   const missingRecipient = isPending && !approval.email_to;
+  const applyUrl = approval.context?.applyUrl;
+  const interviewSessionId = approval.context?.interviewSessionId;
 
   return (
     <div
@@ -56,6 +58,28 @@ export function ApprovalCard({ approval, busy, onApprove, onReject }: ApprovalCa
             {role ? ` — ${role}` : ""}
           </p>
           <p className="text-xs text-muted-foreground">{formatDate(approval.created_at)}</p>
+          <div className="mt-1.5 flex flex-wrap gap-3">
+            {applyUrl && (
+              <a
+                href={applyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-secondary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Apply via link
+              </a>
+            )}
+            {interviewSessionId && (
+              <a
+                href={`/dashboard/interview?sessionId=${interviewSessionId}`}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <MessageSquare className="h-3 w-3" />
+                Interview prep ready
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
@@ -98,7 +122,9 @@ export function ApprovalCard({ approval, busy, onApprove, onReject }: ApprovalCa
       )}
 
       {missingRecipient && !isEditing && (
-        <p className="mt-2 text-[11px] text-warning">No direct email found on this listing — use Edit &amp; Approve to add one.</p>
+        <p className="mt-2 text-[11px] text-warning">
+          No direct email found on this listing — use Edit &amp; Approve to add one{applyUrl ? ", or apply via the link above" : ""}.
+        </p>
       )}
 
       {isPending && (

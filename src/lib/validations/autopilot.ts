@@ -71,6 +71,7 @@ export interface AutopilotApprovalRow {
     role?: string;
     matchScore?: number;
     applyUrl?: string | null;
+    interviewSessionId?: string;
   } | null;
   created_at: string;
   updated_at: string;

@@ -131,49 +131,82 @@ async function executeAutopilotRun(
     const allJobs: JobHunterResultItem[] = searchResult.jobs;
 
     await supabase.from("autopilot_runs").update({ jobs_found: allJobs.length }).eq("id", runId);
+
+    // Full score distribution, every time — this is the single most
+    // useful thing to have in the console/logs when "0 drafts" gets
+    // reported, since it answers "why" immediately instead of needing
+    // a database query to find out.
+    const sortedByScore = [...allJobs].sort((a, b) => b.score - a.score);
+    console.log(
+      `[autopilot] run ${runId}: ${allJobs.length} jobs found, threshold ${settings.min_match_score}%. Top scores:`,
+      sortedByScore.slice(0, 10).map((j) => `${j.score}% ${j.title} @ ${j.company}`)
+    );
+
+    const aboveThreshold = allJobs.filter((j) => j.score >= settings.min_match_score);
+    console.log(`[autopilot] run ${runId}: ${aboveThreshold.length} of ${allJobs.length} jobs meet the ${settings.min_match_score}% threshold`);
+
     await logActivity(
       supabase,
       userId,
       runId,
-      `Found ${allJobs.length} job${allJobs.length === 1 ? "" : "s"} — filtering for matches at or above ${settings.min_match_score}%`,
+      `Found ${allJobs.length} job${allJobs.length === 1 ? "" : "s"} — ${aboveThreshold.length} at or above your ${settings.min_match_score}% threshold` +
+        (allJobs.length > 0 ? ` (best match: ${sortedByScore[0].score}%)` : ""),
       "success"
     );
 
     // Never re-draft a job that's already past "saved" (already applied,
     // interviewing, etc.) or that already has a live (non-rejected)
     // approval from a previous run.
-    const candidateJobs = allJobs.filter(
-      (j) => j.score >= settings.min_match_score && (j.applicationStatus === null || j.applicationStatus === "saved")
-    );
+    const candidateJobs = aboveThreshold.filter((j) => j.applicationStatus === null || j.applicationStatus === "saved");
+    console.log(`[autopilot] run ${runId}: ${candidateJobs.length} of ${aboveThreshold.length} above-threshold jobs aren't already applied/withdrawn/etc.`);
 
-    const { data: existingApprovals } = await supabase
-      .from("autopilot_approvals")
-      .select("job_listing_id")
-      .eq("user_id", userId)
-      .neq("status", "rejected")
-      .in("job_listing_id", candidateJobs.map((j) => j.id));
+    const { data: existingApprovals, error: existingApprovalsError } =
+      candidateJobs.length > 0
+        ? await supabase
+            .from("autopilot_approvals")
+            .select("job_listing_id")
+            .eq("user_id", userId)
+            .neq("status", "rejected")
+            .in(
+              "job_listing_id",
+              candidateJobs.map((j) => j.id)
+            )
+        : { data: [], error: null };
+    if (existingApprovalsError) {
+      console.error(`[autopilot] run ${runId}: failed to check existing approvals:`, existingApprovalsError.message);
+    }
     const alreadyDrafted = new Set((existingApprovals ?? []).map((r) => r.job_listing_id));
+    console.log(`[autopilot] run ${runId}: ${alreadyDrafted.size} candidate jobs already have a live (non-rejected) approval from a previous run`);
 
     // "Max applications per day" is enforced across the whole day, not
     // just this run — a second run today only gets whatever headroom is
     // left under the cap.
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const { count: draftedToday } = await supabase
+    const { count: draftedToday, error: draftedTodayError } = await supabase
       .from("autopilot_approvals")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
       .eq("type", "job_application")
       .gte("created_at", todayStart.toISOString());
+    if (draftedTodayError) {
+      console.error(`[autopilot] run ${runId}: failed to count today's drafts:`, draftedTodayError.message);
+    }
     const remainingToday = Math.max(0, settings.max_applications_per_day - (draftedToday ?? 0));
+    console.log(`[autopilot] run ${runId}: daily cap ${settings.max_applications_per_day}, ${draftedToday ?? 0} drafted today already, ${remainingToday} slots remaining`);
 
     const matches = candidateJobs.filter((j) => !alreadyDrafted.has(j.id)).slice(0, remainingToday);
+    console.log(`[autopilot] run ${runId}: ${matches.length} jobs will get a drafted application this run:`, matches.map((j) => `${j.title} @ ${j.company}`));
 
     if (matches.length === 0) {
       const reason =
         remainingToday === 0
           ? `Daily cap of ${settings.max_applications_per_day} applications already reached — no new drafts this run.`
-          : "No new matching jobs above your threshold right now.";
+          : aboveThreshold.length === 0
+            ? allJobs.length > 0
+              ? `No jobs met your ${settings.min_match_score}% threshold this run (best match was ${sortedByScore[0].score}%) — try lowering "Minimum match score" in Parameters.`
+              : "No jobs found this run."
+            : "Every matching job already has a draft or application from a previous run.";
       await logActivity(supabase, userId, runId, reason, "success");
       await supabase
         .from("autopilot_runs")
@@ -203,6 +236,7 @@ async function executeAutopilotRun(
       });
 
       if ("error" in analysis) {
+        console.error(`[autopilot] run ${runId}: resume-architect analysis failed for ${job.title} @ ${job.company}: ${analysis.error} (status ${analysis.status})`);
         await logActivity(
           supabase,
           userId,
@@ -246,8 +280,10 @@ async function executeAutopilotRun(
 
       // Tracked the same way the Jobs page's own Save/Apply does — this
       // is what lets an approval later flip a real job_applications row
-      // to "applied".
-      const { data: application } = await supabase
+      // to "applied". Errors here were previously never checked at all
+      // — a failed upsert silently left job_application_id null and
+      // execution carried on as if nothing was wrong.
+      const { data: application, error: applicationError } = await supabase
         .from("job_applications")
         .upsert(
           {
@@ -263,7 +299,28 @@ async function executeAutopilotRun(
         .select("id")
         .maybeSingle();
 
-      await supabase.from("autopilot_approvals").insert({
+      if (applicationError) {
+        console.error(`[autopilot] run ${runId}: job_applications upsert failed for ${job.title} @ ${job.company}:`, {
+          message: applicationError.message,
+          details: applicationError.details,
+          hint: applicationError.hint,
+          code: applicationError.code,
+        });
+        // Not fatal on its own — the approval below can still be
+        // created with job_application_id null — but worth surfacing,
+        // since it means "Approve" won't be able to flip a
+        // job_applications row to "applied" for this one.
+        await logActivity(
+          supabase,
+          userId,
+          runId,
+          `Couldn't save a job_applications record for ${job.title} at ${job.company}: ${applicationError.message}`,
+          "failed",
+          job.id
+        );
+      }
+
+      const { error: approvalInsertError } = await supabase.from("autopilot_approvals").insert({
         user_id: userId,
         run_id: runId,
         type: "job_application",
@@ -277,6 +334,28 @@ async function executeAutopilotRun(
         context: { company: job.company, role: job.title, matchScore: job.score, applyUrl: job.applyUrl },
       });
 
+      if (approvalInsertError) {
+        // This is the exact failure mode "0 drafts created" would
+        // actually look like if the pipeline reached this point at
+        // all — logged in full (message/details/hint/code, the same
+        // shape Postgres actually returns) rather than swallowed.
+        console.error(`[autopilot] run ${runId}: autopilot_approvals insert FAILED for ${job.title} @ ${job.company}:`, {
+          message: approvalInsertError.message,
+          details: approvalInsertError.details,
+          hint: approvalInsertError.hint,
+          code: approvalInsertError.code,
+        });
+        await logActivity(
+          supabase,
+          userId,
+          runId,
+          `Couldn't create a draft for ${job.title} at ${job.company}: ${approvalInsertError.message}`,
+          "failed",
+          job.id
+        );
+        continue; // did NOT create a draft — don't count it or notify as if it did
+      }
+
       draftsCreated++;
       await supabase.from("autopilot_runs").update({ drafts_created: draftsCreated }).eq("id", runId);
 
@@ -285,7 +364,7 @@ async function executeAutopilotRun(
         title: `Draft ready: ${job.title} at ${job.company}`,
         message: emailTo
           ? "Review the drafted application and approve to send."
-          : "No direct email address found on this listing — add a recipient in Edit & Approve before sending.",
+          : "No direct email address found on this listing — add a recipient in Edit & Approve before sending, or apply via the listing link.",
         type: "info",
         link: "/dashboard/autopilot",
       });

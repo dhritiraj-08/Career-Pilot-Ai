@@ -175,13 +175,20 @@ export function AutopilotClient({
           const item = prev.find((a) => a.id === id);
           if (item) {
             setSent((s) => [
-              { ...item, status: "sent", ...(edits ? { email_draft_subject: edits.subject, email_draft_body: edits.body, email_to: edits.to } : {}) },
+              {
+                ...item,
+                status: "sent",
+                ...(edits ? { email_draft_subject: edits.subject, email_draft_body: edits.body, email_to: edits.to } : {}),
+                ...(data.interviewSessionId
+                  ? { context: { ...(item.context ?? {}), interviewSessionId: data.interviewSessionId } }
+                  : {}),
+              },
               ...s,
             ]);
           }
           return prev.filter((a) => a.id !== id);
         });
-        toast.success("Sent");
+        toast.success(data.interviewSessionId ? "Sent — interview prep is ready too" : "Sent");
         router.refresh();
       } catch (err) {
         toast.error("Couldn't send", { description: err instanceof Error ? err.message : "Please try again." });

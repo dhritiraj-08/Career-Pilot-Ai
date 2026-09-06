@@ -3,7 +3,15 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getValidGmailToken } from "@/lib/gmail-tokens";
 import { sendGmailMessage } from "@/lib/gmail";
+import { runInterviewStart } from "@/lib/agents/interview";
 import type { EmailCategory } from "@/lib/validations/email";
+
+// Interview-prep question generation is its own LLM call on top of the
+// send itself.
+export const maxDuration = 60;
+
+const DEFAULT_INTERVIEW_TYPE = "mixed" as const;
+const DEFAULT_QUESTION_COUNT = 10;
 
 interface RequestBody {
   // "Edit & Approve" sends these instead of the stored draft — also
@@ -117,7 +125,8 @@ export async function POST(request: Request, { params }: { params: { approvalId:
       .eq("id", approval.run_id);
   }
 
-  const company = (approval.context as { company?: string } | null)?.company;
+  const approvalContext = (approval.context ?? {}) as { company?: string; role?: string; matchScore?: number; applyUrl?: string | null };
+  const company = approvalContext.company;
   await supabase.from("notifications").insert({
     user_id: user.id,
     title: `Sent${company ? `: ${company}` : ""}`,
@@ -134,5 +143,62 @@ export async function POST(request: Request, { params }: { params: { approvalId:
     details: { run_id: approval.run_id, approval_id: approval.id },
   });
 
-  return NextResponse.json({ success: true, messageId: sent.id });
+  // Approving a job application also preps for the interview that
+  // might follow — generates a real question set now (not a stub),
+  // using sensible defaults (a mixed technical/HR set, 10 questions)
+  // since nothing at approval time tells us which type/length the user
+  // would have picked on the Interview page themselves. Best-effort:
+  // the application was already sent above, so a failure here is
+  // logged and skipped rather than failing this whole request.
+  let interviewSessionId: string | null = null;
+  if (approval.type === "job_application" && approval.job_listing_id && approval.resume_id) {
+    const { data: listing } = await supabase
+      .from("job_listings")
+      .select("title, company, description")
+      .eq("id", approval.job_listing_id)
+      .maybeSingle();
+
+    if (listing) {
+      const interviewResult = await runInterviewStart(supabase, user.id, {
+        resumeId: approval.resume_id,
+        targetRole: listing.title,
+        company: listing.company,
+        jobDescription: listing.description ?? "",
+        interviewType: DEFAULT_INTERVIEW_TYPE,
+        questionCount: DEFAULT_QUESTION_COUNT,
+      });
+
+      if ("error" in interviewResult) {
+        console.error(`[autopilot] interview-prep failed for approval ${approval.id}:`, interviewResult.error);
+      } else {
+        interviewSessionId = interviewResult.sessionId;
+
+        // Folded into the approval's own context so its card in the
+        // Sent section can show an "Interview prep ready" link too,
+        // not just the standalone notification.
+        await supabase
+          .from("autopilot_approvals")
+          .update({ context: { ...approvalContext, interviewSessionId } })
+          .eq("id", approval.id);
+
+        await supabase.from("notifications").insert({
+          user_id: user.id,
+          title: `Interview prep ready for ${listing.company}`,
+          message: `A mock interview for ${listing.title} is ready whenever you want to practice.`,
+          type: "info",
+          link: `/dashboard/interview?sessionId=${interviewSessionId}`,
+        });
+
+        await supabase.from("agent_activities").insert({
+          user_id: user.id,
+          agent_name: "orchestrator",
+          action: `Prepped a mock interview for ${listing.title} at ${listing.company}`,
+          status: "success",
+          details: { run_id: approval.run_id, approval_id: approval.id },
+        });
+      }
+    }
+  }
+
+  return NextResponse.json({ success: true, messageId: sent.id, interviewSessionId });
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import type { InterviewQuestionItem } from "@/lib/validations/interview";
@@ -15,12 +16,48 @@ interface InterviewClientProps {
 
 type Step =
   | { name: "setup" }
+  | { name: "loading" }
   | { name: "room"; sessionId: string; totalQuestions: number; question: InterviewQuestionItem }
   | { name: "results"; sessionId: string };
 
 export function InterviewClient({ resumes, defaultTargetRole }: InterviewClientProps) {
-  const [step, setStep] = React.useState<Step>({ name: "setup" });
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const resumeSessionId = searchParams.get("sessionId");
+  const [step, setStep] = React.useState<Step>(resumeSessionId ? { name: "loading" } : { name: "setup" });
   const [isStarting, setIsStarting] = React.useState(false);
+
+  // A link from elsewhere (Autopilot's "Interview prep ready"
+  // notification auto-creates a real session — see
+  // api/autopilot/approve) lands here with ?sessionId=... instead of
+  // the blank setup form.
+  React.useEffect(() => {
+    if (!resumeSessionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/agents/interview/session/${resumeSessionId}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) throw new Error(data.error ?? "Couldn't load that interview session");
+        if (data.isComplete) {
+          setStep({ name: "results", sessionId: data.sessionId });
+        } else {
+          setStep({ name: "room", sessionId: data.sessionId, totalQuestions: data.totalQuestions, question: data.question });
+        }
+      } catch (err) {
+        if (cancelled) return;
+        toast.error("Couldn't resume that interview", { description: err instanceof Error ? err.message : "Please try again." });
+        setStep({ name: "setup" });
+      } finally {
+        if (!cancelled) router.replace("/dashboard/interview");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeSessionId]);
 
   const handleStart = async (values: InterviewSetupValues) => {
     setIsStarting(true);
@@ -60,6 +97,10 @@ export function InterviewClient({ resumes, defaultTargetRole }: InterviewClientP
   const handleStartNew = () => {
     setStep({ name: "setup" });
   };
+
+  if (step.name === "loading") {
+    return <p className="py-16 text-center text-sm text-muted-foreground">Loading your interview session...</p>;
+  }
 
   if (step.name === "room") {
     return (
