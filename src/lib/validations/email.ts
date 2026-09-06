@@ -49,14 +49,30 @@ export const COMPOSE_TYPE_LABELS: Record<ComposeType, string> = {
   cold: "Cold Outreach",
 };
 
-// A message must match at least one of these (case-insensitive, in
-// subject or snippet) to be treated as job-related at all during sync
-// — cuts an inbox of 100 recent emails down before spending an LLM
-// call on categorizing the rest.
-export const JOB_KEYWORDS = [
-  "application", "applied", "interview", "offer", "rejection", "unfortunately",
-  "opportunity", "position", "role", "hiring", "recruiter", "recruitment",
-  "hr", "talent", "candidate", "resume", "cv", "job", "career", "onboarding",
+// Step 1 of sync's two-step filter: a deliberately loose pre-filter
+// checked only against subject/sender (case-insensitive) — just to cut
+// an inbox of a few thousand down to a couple hundred candidates before
+// spending anything on AI. Being loose here is fine (Spotify/iCloud/
+// payment mail can still slip through "job" or "role" appearing
+// somewhere) because step 2 (the batched AI relevance check below) is
+// the actual filter; this step exists only to bound API/LLM cost.
+export const LOOSE_JOB_KEYWORDS = [
+  "interview", "offer", "hiring", "recruiter", "talent", "career",
+  "application", "position", "role", "job", "opportunity", "hr",
+  "placement", "internship", "campus",
+];
+
+// Step 2's deterministic fallback, used only when the batched AI
+// relevance call itself fails (network/timeout/malformed response) —
+// deliberately narrower and more specific than LOOSE_JOB_KEYWORDS so
+// this backup doesn't reintroduce the same false positives (a generic
+// "role"/"career" match) that the AI step exists to filter out.
+export const STRICT_JOB_KEYWORDS = [
+  "job offer", "offer of employment", "interview invitation", "interview scheduled",
+  "phone screen", "technical interview", "application received", "thank you for applying",
+  "regret to inform", "not moving forward", "other candidates", "not selected",
+  "recruiter", "talent acquisition", "hiring manager", "campus placement",
+  "internship offer", "shortlisted", "your application for", "your application to",
 ];
 
 /** Matches the emails table row shape as selected in
@@ -105,6 +121,37 @@ export function parseCategorization(raw: unknown, expectedCount: number): SyncCa
   const parsed = rawCategorizationSchema.safeParse(raw);
   const categories = parsed.success ? parsed.data.categories ?? [] : [];
   return Array.from({ length: expectedCount }, (_, i) => categories[i] ?? "received");
+}
+
+// ---------------------------------------------------------------------
+// LLM relevance-check response — step 2/3 of sync's filter. One batch
+// call answers YES/NO for up to RELEVANCE_BATCH_SIZE candidate emails
+// at once, in a plain "1:YES 2:NO ..." line rather than JSON (cheaper
+// for the model to produce reliably for a simple per-item boolean, and
+// easy to parse position-by-position with a regex regardless of the
+// model's exact spacing/casing).
+// ---------------------------------------------------------------------
+
+/** Parses "1:YES 2:NO 3:yes ..." into an array of booleans (or `null`
+ * for any position the model didn't answer). Throws if it found no
+ * recognizable answers at all, so the caller can tell "the model
+ * answered some of these oddly" (partial — fill gaps from the caller's
+ * own fallback per email) apart from "this call produced garbage"
+ * (total failure — fall back for the whole batch). */
+export function parseRelevanceBatch(raw: string, expectedCount: number): (boolean | null)[] {
+  const results: (boolean | null)[] = new Array(expectedCount).fill(null);
+  let found = 0;
+  for (const m of Array.from(raw.matchAll(/(\d+)\s*:\s*(YES|NO)/gi))) {
+    const idx = Number(m[1]) - 1;
+    if (idx >= 0 && idx < expectedCount) {
+      results[idx] = m[2].toUpperCase() === "YES";
+      found++;
+    }
+  }
+  if (found === 0) {
+    throw new Error("No YES/NO answers found in relevance-check response");
+  }
+  return results;
 }
 
 // ---------------------------------------------------------------------

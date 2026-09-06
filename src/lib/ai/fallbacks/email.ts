@@ -1,6 +1,19 @@
 import type { ComposeType } from "@/lib/validations/email";
 import type { SyncCategory } from "@/lib/validations/email";
+import { STRICT_JOB_KEYWORDS } from "@/lib/validations/email";
 import type { ComposeContext, OriginalEmail } from "@/lib/ai/prompts/email";
+
+/**
+ * Deterministic backup for the batched AI relevance check (step 2/3 of
+ * sync's filter) — used only when that LLM call fails outright or comes
+ * back unparseable. Checked against STRICT_JOB_KEYWORDS rather than the
+ * loose step-1 list, so a failed AI call doesn't silently fall back to
+ * the same generic matching the AI step exists to improve on.
+ */
+export function fallbackIsJobRelated(subject: string, sender: string, snippet: string): boolean {
+  const text = `${subject} ${sender} ${snippet}`.toLowerCase();
+  return STRICT_JOB_KEYWORDS.some((kw) => text.includes(kw));
+}
 
 /**
  * Deterministic keyword-based categorization — real heuristics against

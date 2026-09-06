@@ -20,6 +20,16 @@ export function formatDate(dateString: string): string {
   });
 }
 
+/** Splits `items` into consecutive groups of at most `size` — used to
+ * batch several records into one LLM call instead of one call each. */
+export function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
 /** Maps over `items` with at most `limit` calls to `fn` in flight at
  * once — used for Gmail API calls during sync, where firing all ~100
  * requests at once risks the per-user rate limit. */

@@ -47,6 +47,48 @@ Rules:
   ];
 }
 
+export interface EmailForRelevanceCheck {
+  sender: string;
+  subject: string;
+  snippet: string;
+}
+
+/** How many candidate emails go into one relevance-check call — batching
+ * beats one call per email the same way categorization already does. */
+export const RELEVANCE_BATCH_SIZE = 10;
+
+/**
+ * Step 2/3 of sync's filter: the real job-relevance decision, run only
+ * on candidates that already passed the loose keyword pre-filter
+ * (step 1). Deliberately sender+subject+snippet only — never the full
+ * body — both because that's all a candidate has at this point (full
+ * fetch happens only after this passes) and to keep this call cheap.
+ */
+export function buildRelevanceCheckMessages(emails: EmailForRelevanceCheck[]): OpenRouterMessage[] {
+  const list = emails
+    .map((e, i) => `${i + 1}. Sender: ${e.sender}\n   Subject: ${e.subject}\n   Preview: ${e.snippet.slice(0, 200)}`)
+    .join("\n\n");
+
+  return [
+    {
+      role: "system",
+      content: `Is each numbered email job-search related? Answer only YES or NO for each.
+
+Job-related means: job applications, interview invitations, job offers, recruiter outreach, hiring process updates, internship opportunities, campus placement, rejection letters, or follow-up on a job application.
+NOT job-related: payments, subscriptions, promotions, shipping, social media, news, entertainment, and anything else unrelated to a job search.
+
+Respond with ONLY this exact format, all on one line, no commentary, no markdown:
+1:YES 2:NO 3:YES ...
+
+You must give exactly ${emails.length} answers, in the same order as the numbered list below.`,
+    },
+    {
+      role: "user",
+      content: list,
+    },
+  ];
+}
+
 export interface ComposeContext {
   company: string;
   role: string;
