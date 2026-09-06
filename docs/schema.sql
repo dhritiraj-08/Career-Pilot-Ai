@@ -505,21 +505,37 @@ create table public.emails (
   id                   uuid primary key default gen_random_uuid(),
   user_id              uuid not null references auth.users(id) on delete cascade,
   job_application_id   uuid references public.job_applications(id) on delete set null,
+  -- Original set covered emails the app itself drafts/sends. The Email
+  -- Agent's inbox categories need four more for what Gmail sync
+  -- classifies incoming mail as — added rather than reusing 'received'
+  -- for all of them, since "Recruiter Emails / Interview Invites /
+  -- Offer Letters / Rejections" are each their own filter bucket in
+  -- the UI, not one undifferentiated pile.
   type                 text not null
-                       check (type in ('application', 'follow_up', 'thank_you', 'offer_response', 'received', 'other')),
+                       check (type in ('application', 'follow_up', 'thank_you', 'offer_response', 'received', 'other', 'recruiter_outreach', 'interview_invite', 'offer', 'rejection')),
   subject              text,
   body                 text,
   recipient            text,
   sender               text,
+  -- Sender's actual address (sender can just be a display name) —
+  -- needed to reply to the right address and isn't derivable from
+  -- sender alone.
+  sender_email         text,
   status               text not null default 'draft'
                        check (status in ('draft', 'sent', 'failed', 'received')),
   sent_at              timestamptz,
   received_at          timestamptz,
+  -- Set only for rows synced from Gmail (never for app-drafted/sent
+  -- mail) — gmail_message_id dedups repeat syncs, gmail_thread_id
+  -- carries the thread forward when replying.
+  gmail_message_id     text,
+  gmail_thread_id      text,
   created_at           timestamptz not null default now()
 );
 
 create index idx_emails_user_id on public.emails(user_id);
 create index idx_emails_job_application_id on public.emails(job_application_id);
+create unique index idx_emails_user_gmail_message on public.emails(user_id, gmail_message_id) where gmail_message_id is not null;
 
 alter table public.emails enable row level security;
 
@@ -530,6 +546,45 @@ create policy "emails_insert_own" on public.emails
 create policy "emails_update_own" on public.emails
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "emails_delete_own" on public.emails
+  for delete using (auth.uid() = user_id);
+
+
+-- =====================================================================
+-- 14b. oauth_tokens
+-- One row per (user, provider) — Gmail today, structured to allow
+-- other providers later without a schema change. access_token and
+-- refresh_token are stored encrypted at rest (see lib/crypto.ts) —
+-- RLS is the second layer, not the only one, since these are live
+-- credentials to the user's real inbox.
+-- =====================================================================
+create table public.oauth_tokens (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  provider        text not null check (provider in ('gmail')),
+  access_token    text not null,
+  refresh_token   text not null,
+  token_expiry    timestamptz not null,
+  email           text not null,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (user_id, provider)
+);
+
+create index idx_oauth_tokens_user_id on public.oauth_tokens(user_id);
+
+create trigger trg_oauth_tokens_updated_at
+  before update on public.oauth_tokens
+  for each row execute function public.set_updated_at();
+
+alter table public.oauth_tokens enable row level security;
+
+create policy "oauth_tokens_select_own" on public.oauth_tokens
+  for select using (auth.uid() = user_id);
+create policy "oauth_tokens_insert_own" on public.oauth_tokens
+  for insert with check (auth.uid() = user_id);
+create policy "oauth_tokens_update_own" on public.oauth_tokens
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "oauth_tokens_delete_own" on public.oauth_tokens
   for delete using (auth.uid() = user_id);
 
 
@@ -724,6 +779,52 @@ alter default privileges in schema public grant all on routines to anon, authent
 --   alter table public.profiles add column if not exists xp int not null default 0;
 --   alter table public.roadmap_steps add column if not exists week_number int;
 --   alter table public.roadmap_steps add column if not exists focus_area text;
+-- =====================================================================
+
+-- =====================================================================
+-- Migration: oauth_tokens table, emails Gmail-sync columns/categories
+--
+-- Added when building the Email Agent. REQUIRED before using it —
+-- unlike some earlier migrations this one has no graceful fallback:
+-- connecting Gmail writes to oauth_tokens directly, and syncing writes
+-- gmail_message_id/gmail_thread_id on every row, so both fail outright
+-- without this. If you already ran schema.sql before this, run once
+-- against your existing database:
+--
+--   create table if not exists public.oauth_tokens (
+--     id              uuid primary key default gen_random_uuid(),
+--     user_id         uuid not null references auth.users(id) on delete cascade,
+--     provider        text not null check (provider in ('gmail')),
+--     access_token    text not null,
+--     refresh_token   text not null,
+--     token_expiry    timestamptz not null,
+--     email           text not null,
+--     created_at      timestamptz not null default now(),
+--     updated_at      timestamptz not null default now(),
+--     unique (user_id, provider)
+--   );
+--   create index if not exists idx_oauth_tokens_user_id on public.oauth_tokens(user_id);
+--   alter table public.oauth_tokens enable row level security;
+--   create policy "oauth_tokens_select_own" on public.oauth_tokens
+--     for select using (auth.uid() = user_id);
+--   create policy "oauth_tokens_insert_own" on public.oauth_tokens
+--     for insert with check (auth.uid() = user_id);
+--   create policy "oauth_tokens_update_own" on public.oauth_tokens
+--     for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+--   create policy "oauth_tokens_delete_own" on public.oauth_tokens
+--     for delete using (auth.uid() = user_id);
+--   create trigger trg_oauth_tokens_updated_at
+--     before update on public.oauth_tokens
+--     for each row execute function public.set_updated_at();
+--
+--   alter table public.emails add column if not exists sender_email text;
+--   alter table public.emails add column if not exists gmail_message_id text;
+--   alter table public.emails add column if not exists gmail_thread_id text;
+--   create unique index if not exists idx_emails_user_gmail_message
+--     on public.emails(user_id, gmail_message_id) where gmail_message_id is not null;
+--   alter table public.emails drop constraint emails_type_check;
+--   alter table public.emails add constraint emails_type_check
+--     check (type in ('application', 'follow_up', 'thank_you', 'offer_response', 'received', 'other', 'recruiter_outreach', 'interview_invite', 'offer', 'rejection'));
 -- =====================================================================
 
 -- =====================================================================

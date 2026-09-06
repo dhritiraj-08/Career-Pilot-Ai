@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Briefcase, FileText, LayoutDashboard, Map, Menu, MessageSquare, Sparkles, User, X } from "lucide-react";
+import { Briefcase, FileText, LayoutDashboard, Mail, Map, Menu, MessageSquare, Sparkles, User, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Resume Architect", href: "/dashboard/resume-architect", icon: Sparkles },
   { label: "Jobs", href: "/dashboard/jobs", icon: Briefcase },
   { label: "Interview", href: "/dashboard/interview", icon: MessageSquare },
+  { label: "Email", href: "/dashboard/email", icon: Mail },
   { label: "Roadmap", href: "/dashboard/roadmap", icon: Map },
 ];
 
