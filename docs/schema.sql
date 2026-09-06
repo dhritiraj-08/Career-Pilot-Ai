@@ -722,6 +722,118 @@ create policy "notifications_delete_own" on public.notifications
 
 
 -- =====================================================================
+-- 19. autopilot_runs
+-- One row per "Run Career Autopilot" click (or scheduled run) — the
+-- top-level record the status panel and activity feed hang off of.
+-- =====================================================================
+create table public.autopilot_runs (
+  id                 uuid primary key default gen_random_uuid(),
+  user_id            uuid not null references auth.users(id) on delete cascade,
+  status             text not null default 'running'
+                     check (status in ('running', 'completed', 'failed', 'paused')),
+  started_at         timestamptz not null default now(),
+  completed_at       timestamptz,
+  jobs_found         int not null default 0,
+  drafts_created     int not null default 0,
+  applications_sent  int not null default 0,
+  error_message      text,
+  created_at         timestamptz not null default now()
+);
+
+create index idx_autopilot_runs_user_id on public.autopilot_runs(user_id);
+create index idx_autopilot_runs_started_at on public.autopilot_runs(started_at desc);
+
+alter table public.autopilot_runs enable row level security;
+
+create policy "autopilot_runs_select_own" on public.autopilot_runs
+  for select using (auth.uid() = user_id);
+create policy "autopilot_runs_insert_own" on public.autopilot_runs
+  for insert with check (auth.uid() = user_id);
+create policy "autopilot_runs_update_own" on public.autopilot_runs
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "autopilot_runs_delete_own" on public.autopilot_runs
+  for delete using (auth.uid() = user_id);
+
+
+-- =====================================================================
+-- 20. autopilot_approvals
+-- One row per human-in-the-loop decision the orchestrator is waiting
+-- on — a drafted application email, interview reply, or follow-up.
+-- Nothing under type job_application/interview_reply/followup is ever
+-- sent to Gmail until this row's status flips to 'approved'.
+-- =====================================================================
+create table public.autopilot_approvals (
+  id                    uuid primary key default gen_random_uuid(),
+  user_id               uuid not null references auth.users(id) on delete cascade,
+  run_id                uuid references public.autopilot_runs(id) on delete cascade,
+  type                  text not null
+                        check (type in ('job_application', 'interview_reply', 'followup')),
+  status                text not null default 'pending'
+                        check (status in ('pending', 'approved', 'rejected', 'sent')),
+  job_listing_id        uuid references public.job_listings(id) on delete set null,
+  job_application_id    uuid references public.job_applications(id) on delete set null,
+  email_draft_subject   text,
+  email_draft_body      text,
+  email_to              text,
+  resume_id             uuid references public.resumes(id) on delete set null,
+  context               jsonb,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+
+create index idx_autopilot_approvals_user_id on public.autopilot_approvals(user_id);
+create index idx_autopilot_approvals_run_id on public.autopilot_approvals(run_id);
+create index idx_autopilot_approvals_status on public.autopilot_approvals(status);
+
+create trigger trg_autopilot_approvals_updated_at
+  before update on public.autopilot_approvals
+  for each row execute function public.set_updated_at();
+
+alter table public.autopilot_approvals enable row level security;
+
+create policy "autopilot_approvals_select_own" on public.autopilot_approvals
+  for select using (auth.uid() = user_id);
+create policy "autopilot_approvals_insert_own" on public.autopilot_approvals
+  for insert with check (auth.uid() = user_id);
+create policy "autopilot_approvals_update_own" on public.autopilot_approvals
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "autopilot_approvals_delete_own" on public.autopilot_approvals
+  for delete using (auth.uid() = user_id);
+
+
+-- =====================================================================
+-- 21. autopilot_settings  (one row per user)
+-- =====================================================================
+create table public.autopilot_settings (
+  id                         uuid primary key default gen_random_uuid(),
+  user_id                    uuid not null unique references auth.users(id) on delete cascade,
+  min_match_score            int not null default 70 check (min_match_score between 50 and 95),
+  max_applications_per_day   int not null default 5 check (max_applications_per_day between 1 and 10),
+  auto_schedule              text not null default 'manual'
+                             check (auto_schedule in ('manual', 'daily', 'weekly')),
+  created_at                 timestamptz not null default now(),
+  updated_at                 timestamptz not null default now()
+);
+
+create index idx_autopilot_settings_user_id on public.autopilot_settings(user_id);
+
+create trigger trg_autopilot_settings_updated_at
+  before update on public.autopilot_settings
+  for each row execute function public.set_updated_at();
+
+alter table public.autopilot_settings enable row level security;
+
+create policy "autopilot_settings_select_own" on public.autopilot_settings
+  for select using (auth.uid() = user_id);
+create policy "autopilot_settings_insert_own" on public.autopilot_settings
+  for insert with check (auth.uid() = user_id);
+create policy "autopilot_settings_update_own" on public.autopilot_settings
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "autopilot_settings_delete_own" on public.autopilot_settings
+  for delete using (auth.uid() = user_id);
+
+
+-- =====================================================================
 -- Grants
 --
 -- RLS policies above are the *second* gate: Postgres checks base table
@@ -825,6 +937,102 @@ alter default privileges in schema public grant all on routines to anon, authent
 --   alter table public.emails drop constraint emails_type_check;
 --   alter table public.emails add constraint emails_type_check
 --     check (type in ('application', 'follow_up', 'thank_you', 'offer_response', 'received', 'other', 'recruiter_outreach', 'interview_invite', 'offer', 'rejection'));
+-- =====================================================================
+
+-- =====================================================================
+-- Migration: autopilot_runs, autopilot_approvals, autopilot_settings
+--
+-- Added when building the Master Orchestrator (Autopilot). REQUIRED —
+-- no graceful fallback: /api/autopilot/run writes an autopilot_runs row
+-- before doing anything else and an autopilot_approvals row per
+-- matched job, and the Autopilot page reads autopilot_settings on
+-- load, so all three fail outright without this. agent_activities
+-- already allowed 'orchestrator' as an agent_name from the original
+-- schema design — no change needed there. If you already ran
+-- schema.sql before this, run once against your existing database:
+--
+--   create table if not exists public.autopilot_runs (
+--     id                 uuid primary key default gen_random_uuid(),
+--     user_id            uuid not null references auth.users(id) on delete cascade,
+--     status             text not null default 'running'
+--                        check (status in ('running', 'completed', 'failed', 'paused')),
+--     started_at         timestamptz not null default now(),
+--     completed_at       timestamptz,
+--     jobs_found         int not null default 0,
+--     drafts_created     int not null default 0,
+--     applications_sent  int not null default 0,
+--     error_message      text,
+--     created_at         timestamptz not null default now()
+--   );
+--   create index if not exists idx_autopilot_runs_user_id on public.autopilot_runs(user_id);
+--   create index if not exists idx_autopilot_runs_started_at on public.autopilot_runs(started_at desc);
+--   alter table public.autopilot_runs enable row level security;
+--   create policy "autopilot_runs_select_own" on public.autopilot_runs
+--     for select using (auth.uid() = user_id);
+--   create policy "autopilot_runs_insert_own" on public.autopilot_runs
+--     for insert with check (auth.uid() = user_id);
+--   create policy "autopilot_runs_update_own" on public.autopilot_runs
+--     for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+--   create policy "autopilot_runs_delete_own" on public.autopilot_runs
+--     for delete using (auth.uid() = user_id);
+--
+--   create table if not exists public.autopilot_approvals (
+--     id                    uuid primary key default gen_random_uuid(),
+--     user_id               uuid not null references auth.users(id) on delete cascade,
+--     run_id                uuid references public.autopilot_runs(id) on delete cascade,
+--     type                  text not null
+--                           check (type in ('job_application', 'interview_reply', 'followup')),
+--     status                text not null default 'pending'
+--                           check (status in ('pending', 'approved', 'rejected', 'sent')),
+--     job_listing_id        uuid references public.job_listings(id) on delete set null,
+--     job_application_id    uuid references public.job_applications(id) on delete set null,
+--     email_draft_subject   text,
+--     email_draft_body      text,
+--     email_to              text,
+--     resume_id             uuid references public.resumes(id) on delete set null,
+--     context               jsonb,
+--     created_at            timestamptz not null default now(),
+--     updated_at            timestamptz not null default now()
+--   );
+--   create index if not exists idx_autopilot_approvals_user_id on public.autopilot_approvals(user_id);
+--   create index if not exists idx_autopilot_approvals_run_id on public.autopilot_approvals(run_id);
+--   create index if not exists idx_autopilot_approvals_status on public.autopilot_approvals(status);
+--   alter table public.autopilot_approvals enable row level security;
+--   create policy "autopilot_approvals_select_own" on public.autopilot_approvals
+--     for select using (auth.uid() = user_id);
+--   create policy "autopilot_approvals_insert_own" on public.autopilot_approvals
+--     for insert with check (auth.uid() = user_id);
+--   create policy "autopilot_approvals_update_own" on public.autopilot_approvals
+--     for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+--   create policy "autopilot_approvals_delete_own" on public.autopilot_approvals
+--     for delete using (auth.uid() = user_id);
+--   create trigger trg_autopilot_approvals_updated_at
+--     before update on public.autopilot_approvals
+--     for each row execute function public.set_updated_at();
+--
+--   create table if not exists public.autopilot_settings (
+--     id                         uuid primary key default gen_random_uuid(),
+--     user_id                    uuid not null unique references auth.users(id) on delete cascade,
+--     min_match_score            int not null default 70 check (min_match_score between 50 and 95),
+--     max_applications_per_day   int not null default 5 check (max_applications_per_day between 1 and 10),
+--     auto_schedule              text not null default 'manual'
+--                                check (auto_schedule in ('manual', 'daily', 'weekly')),
+--     created_at                 timestamptz not null default now(),
+--     updated_at                 timestamptz not null default now()
+--   );
+--   create index if not exists idx_autopilot_settings_user_id on public.autopilot_settings(user_id);
+--   alter table public.autopilot_settings enable row level security;
+--   create policy "autopilot_settings_select_own" on public.autopilot_settings
+--     for select using (auth.uid() = user_id);
+--   create policy "autopilot_settings_insert_own" on public.autopilot_settings
+--     for insert with check (auth.uid() = user_id);
+--   create policy "autopilot_settings_update_own" on public.autopilot_settings
+--     for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+--   create policy "autopilot_settings_delete_own" on public.autopilot_settings
+--     for delete using (auth.uid() = user_id);
+--   create trigger trg_autopilot_settings_updated_at
+--     before update on public.autopilot_settings
+--     for each row execute function public.set_updated_at();
 -- =====================================================================
 
 -- =====================================================================

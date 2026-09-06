@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Briefcase, FileText, LayoutDashboard, Mail, Map, Menu, MessageSquare, Sparkles, User, X } from "lucide-react";
+import { Briefcase, FileText, LayoutDashboard, Mail, Map, Menu, MessageSquare, Sparkles, User, X, Zap } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -17,6 +17,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { label: "Autopilot", href: "/dashboard/autopilot", icon: Zap },
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Profile", href: "/dashboard/profile", icon: User },
   { label: "Resumes", href: "/dashboard/resumes", icon: FileText },

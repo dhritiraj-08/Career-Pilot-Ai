@@ -1,0 +1,219 @@
+import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchRemoteOkJobs } from "@/lib/job-sources/remoteok";
+import { fetchWeWorkRemotelyJobs } from "@/lib/job-sources/weworkremotely";
+import type { NormalizedJob } from "@/lib/job-sources/types";
+import { scoreJob, isLikelyTechJob, type CandidateSearchCriteria } from "@/lib/job-matching";
+
+// Below this composite score, a listing is treated as not a real match
+// for this search rather than a low-ranked one — filtered out entirely
+// instead of shown at the bottom of the list.
+const MIN_MATCH_SCORE = 40;
+
+export interface JobHunterSearchParams {
+  workModes?: string[];
+  location?: string;
+  role?: string;
+  minSalary?: number | null;
+  indiaFriendlyOnly?: boolean;
+}
+
+const VALID_WORK_MODES = new Set(["remote", "hybrid", "onsite"]);
+
+export interface JobHunterResultItem {
+  id: string;
+  source: string;
+  title: string;
+  company: string;
+  location: string | null;
+  jobType: string | null;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  currency: string;
+  description: string | null;
+  applyUrl: string | null;
+  postedAt: string | null;
+  score: number;
+  matchedSkills: string[];
+  missingSkills: string[];
+  matchReasons: string[];
+  regionRestriction: string | null;
+  applicationStatus: "saved" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn" | null;
+}
+
+export type JobHunterSearchResult =
+  | { jobs: JobHunterResultItem[]; message?: string }
+  | { error: string; status: number };
+
+/**
+ * The Job Hunter agent's actual work, extracted out of
+ * api/agents/job-hunter/route.ts so the Autopilot orchestrator can call
+ * it directly (in-process, with the caller's own already-authenticated
+ * `supabase` client) instead of the route handler having to make an
+ * HTTP call to its own API — which would mean re-forwarding auth
+ * cookies for no real benefit. The route below is now a thin wrapper
+ * around this; behavior is unchanged.
+ */
+export async function runJobHunterSearch(
+  supabase: SupabaseClient,
+  userId: string,
+  params: JobHunterSearchParams
+): Promise<JobHunterSearchResult> {
+  const workModes = (params.workModes ?? []).filter((m): m is "remote" | "hybrid" | "onsite" =>
+    VALID_WORK_MODES.has(m)
+  );
+  const location = params.location?.trim() ?? "";
+  const role = params.role?.trim() ?? "";
+  const minSalary = typeof params.minSalary === "number" && params.minSalary > 0 ? params.minSalary : null;
+  const indiaFriendlyOnly = params.indiaFriendlyOnly === true;
+
+  // Both sources are remote-only. If the user asked for onsite alone
+  // (no remote/hybrid also selected), no listing here can ever satisfy
+  // that — an honest empty result, not a bug, and not worth spending a
+  // scrape on.
+  const onsiteOnly = workModes.length > 0 && !workModes.includes("remote") && !workModes.includes("hybrid");
+
+  const [{ data: profile }, { data: skillRows }, { data: preferences }] = await Promise.all([
+    supabase.from("profiles").select("current_job_role").eq("user_id", userId).maybeSingle(),
+    supabase.from("skills").select("name").eq("user_id", userId),
+    supabase
+      .from("job_preferences")
+      .select("target_roles, preferred_locations, work_mode, min_salary, currency")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  const candidateSkills = (skillRows ?? []).map((s) => s.name.toLowerCase().trim());
+  const criteria: CandidateSearchCriteria = {
+    skills: candidateSkills,
+    roles: role ? [role] : preferences?.target_roles ?? [],
+    currentJobRole: profile?.current_job_role ?? "",
+    workModes: workModes.length > 0 ? workModes : preferences?.work_mode && preferences.work_mode !== "any"
+      ? [preferences.work_mode as "remote" | "hybrid" | "onsite"]
+      : [],
+    location: location || preferences?.preferred_locations?.[0] || "",
+    minSalary: minSalary ?? preferences?.min_salary ?? null,
+    currency: preferences?.currency ?? "INR",
+  };
+
+  if (onsiteOnly) {
+    return { jobs: [], message: "No jobs found right now, try again later." };
+  }
+
+  const [remoteOkResult, wwrResult] = await Promise.allSettled([
+    fetchRemoteOkJobs(),
+    fetchWeWorkRemotelyJobs(),
+  ]);
+
+  // RemoteOK's /api returns listings from every category it has, not
+  // just software/tech, and WeWorkRemotely's programming-category feed
+  // isn't perfectly curated either — filtered out here, before
+  // upserting, so the shared catalog itself stays tech-relevant.
+  const normalizedJobs: NormalizedJob[] = [
+    ...(remoteOkResult.status === "fulfilled" ? remoteOkResult.value : []),
+    ...(wwrResult.status === "fulfilled" ? wwrResult.value : []),
+  ].filter(isLikelyTechJob);
+
+  if (remoteOkResult.status === "rejected") {
+    console.error("[job-hunter] RemoteOK source rejected:", remoteOkResult.reason);
+  }
+  if (wwrResult.status === "rejected") {
+    console.error("[job-hunter] WeWorkRemotely source rejected:", wwrResult.reason);
+  }
+
+  if (normalizedJobs.length === 0) {
+    return { jobs: [], message: "No jobs found right now, try again later." };
+  }
+
+  // Upsert into the shared catalog with the service-role client — regular
+  // users have no write policy on job_listings by design (see
+  // docs/schema.sql). .select() gets real row ids back for scoring/saving.
+  const admin = createAdminClient();
+  const { data: upsertedListings, error: upsertError } = await admin
+    .from("job_listings")
+    .upsert(
+      normalizedJobs.map((job) => ({
+        source: job.source,
+        external_id: job.external_id,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        job_type: job.job_type,
+        salary_min: job.salary_min,
+        salary_max: job.salary_max,
+        currency: job.currency,
+        description: job.description,
+        requirements: job.requirements,
+        apply_url: job.apply_url,
+        posted_at: job.posted_at,
+        is_active: true,
+      })),
+      { onConflict: "source,external_id" }
+    )
+    .select("id, source, external_id");
+
+  if (upsertError || !upsertedListings) {
+    console.error("[job-hunter] failed to upsert job_listings:", upsertError?.message);
+    return { error: "Couldn't save job listings", status: 500 };
+  }
+
+  const listingIdByKey = new Map(
+    upsertedListings.map((row) => [`${row.source}:${row.external_id}`, row.id as string])
+  );
+
+  // Existing application state for these listings, so the client can
+  // show accurate Saved/Applied badges without a second round trip.
+  const listingIds = Array.from(listingIdByKey.values());
+  const { data: existingApplications } = await supabase
+    .from("job_applications")
+    .select("job_listing_id, status")
+    .eq("user_id", userId)
+    .in("job_listing_id", listingIds);
+
+  const statusByListingId = new Map(
+    (existingApplications ?? []).map((row) => [row.job_listing_id as string, row.status])
+  );
+
+  const results: JobHunterResultItem[] = normalizedJobs
+    .map((job): JobHunterResultItem | null => {
+      const id = listingIdByKey.get(`${job.source}:${job.external_id}`);
+      if (!id) return null;
+      const scored = scoreJob(job, criteria);
+      return {
+        id,
+        source: job.source,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        jobType: job.job_type,
+        salaryMin: job.salary_min,
+        salaryMax: job.salary_max,
+        currency: job.currency,
+        description: job.description,
+        applyUrl: job.apply_url,
+        postedAt: job.posted_at,
+        score: scored.score,
+        matchedSkills: scored.matchedSkills,
+        missingSkills: scored.missingSkills,
+        matchReasons: scored.matchReasons,
+        regionRestriction: scored.regionRestriction,
+        applicationStatus: (statusByListingId.get(id) as JobHunterResultItem["applicationStatus"]) ?? null,
+      };
+    })
+    .filter((r): r is JobHunterResultItem => r !== null)
+    .filter((r) => !indiaFriendlyOnly || r.regionRestriction === null)
+    .filter((r) => r.score >= MIN_MATCH_SCORE)
+    .sort((a, b) => b.score - a.score);
+
+  await supabase.from("agent_activities").insert({
+    user_id: userId,
+    agent_name: "job_hunter",
+    action: `Searched for jobs${role ? ` matching "${role}"` : ""} — found ${results.length} listing${results.length === 1 ? "" : "s"}`,
+    status: "success",
+    details: { count: results.length, sources: normalizedJobs.map((j) => j.source) },
+  });
+
+  return { jobs: results };
+}

@@ -61,4 +61,21 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Autopilot: pending-approval cards and the "Running" status dot both
+   * need a genuine glow pulse rather than Tailwind's built-in
+   * animate-pulse (which fades the whole element's opacity, dimming
+   * content along with it) — this pulses a box-shadow ring instead. */
+  @keyframes pulse-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--pulse-glow-color, var(--warning)) / 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 8px hsl(var(--pulse-glow-color, var(--warning)) / 0);
+    }
+  }
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
 }
