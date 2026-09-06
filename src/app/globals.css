@@ -8,44 +8,52 @@
  * class) so a future light palette can be added without restructuring.
  * All values are HSL triplets (no hsl() wrapper) for Tailwind's
  * hsl(var(--x) / <alpha-value>) opacity syntax.
+ *
+ * Revamp note: colors below match the exact hex values specified for
+ * the visual redesign, converted to HSL precisely (not eyeballed) —
+ * see the conversion in the PR/commit this landed in if you need to
+ * trace a value back to its source hex.
  */
 :root {
-  --background: 216 33% 3%; /* #05070A — bg-base */
+  --background: 225 43% 5%; /* #080B14 — bg-base, blue-tinted deep dark */
   --foreground: 216 33% 97%; /* #F5F7FA — text-primary */
 
-  --card: 216 29% 7%; /* #0C1016 — bg-surface */
+  --card: 226 36% 9%; /* #0F1320 — bg-surface */
   --card-foreground: 216 33% 97%;
 
-  --popover: 214 26% 11%; /* #141A22 — bg-elevated */
+  --elevated: 226 30% 11%; /* #141825 — modals, dropdowns, hover-raised cards */
+  --elevated-foreground: 216 33% 97%;
+
+  --popover: 226 30% 11%; /* #141825 */
   --popover-foreground: 216 33% 97%;
 
-  --primary: 252 96% 68%; /* #7C5CFC — accent-primary */
+  --primary: 252 96% 67%; /* #7C5CFC — accent-primary (violet) */
   --primary-foreground: 216 33% 97%;
 
-  --secondary: 190 100% 50%; /* #00D4FF — accent-secondary */
-  --secondary-foreground: 216 33% 3%;
+  --secondary: 190 100% 50%; /* #00D4FF — accent-secondary (cyan) */
+  --secondary-foreground: 225 43% 5%;
 
-  --muted: 216 29% 7%;
-  --muted-foreground: 216 17% 44%; /* #5C6B82 — text-muted */
+  --muted: 226 36% 9%;
+  --muted-foreground: 220 9% 46%; /* #6B7280 */
 
-  --accent: 214 26% 11%;
+  --accent: 226 30% 13%;
   --accent-foreground: 216 33% 97%;
 
-  --destructive: 352 90% 62%; /* #F5455C — error */
+  --destructive: 0 84% 60%; /* #EF4444 */
   --destructive-foreground: 216 33% 97%;
 
-  --success: 142 71% 45%; /* #22C55E */
+  --success: 160 84% 39%; /* #10B981 */
   --success-foreground: 216 33% 97%;
 
-  --warning: 37 91% 55%; /* #F5A623 */
-  --warning-foreground: 216 33% 3%;
+  --warning: 38 92% 50%; /* #F59E0B */
+  --warning-foreground: 225 43% 5%;
 
-  --border: 215 24% 14%; /* #1B222C — border-subtle */
-  --border-strong: 217 21% 21%; /* #2A3341 */
-  --input: 215 24% 14%;
-  --ring: 252 96% 68%;
+  --border: 223 26% 16%; /* #1E2433 — border-subtle */
+  --border-strong: 223 24% 26%;
+  --input: 223 26% 16%;
+  --ring: 252 96% 67%;
 
-  --radius: 0.625rem;
+  --radius: 0.75rem;
 }
 
 * {
@@ -78,4 +86,157 @@ body {
   .animate-pulse-glow {
     animation: pulse-glow 2s ease-in-out infinite;
   }
+
+  /* ------------------------------------------------------------------
+   * Visual-revamp utilities — shared across every page redesign so the
+   * "world-class product" feel comes from one consistent system rather
+   * than each page inventing its own glass/glow/grid treatment.
+   * ------------------------------------------------------------------ */
+
+  /* Very subtle dot grid — background pattern for page/panel surfaces.
+   * Deliberately faint (single-pixel dots, low alpha) so it reads as
+   * texture/depth, never as visual noise competing with content. */
+  .bg-dot-grid {
+    background-image: radial-gradient(hsl(var(--border-strong) / 0.5) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Glass morphism — hero/feature cards, modals, the login split-panel
+   * form. Falls back gracefully (looks like a plain elevated card) in
+   * any browser without backdrop-filter support. */
+  .glass {
+    background: hsl(var(--card) / 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--border-strong) / 0.6);
+  }
+
+  /* Standard card hover: a slight lift + shadow + brighter border —
+   * used everywhere a card is clickable/navigable. */
+  .card-hover {
+    transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    border-color: hsl(var(--border-strong));
+    box-shadow: 0 12px 32px -12px hsl(225 60% 2% / 0.6);
+  }
+
+  /* A 2px gradient hairline along a card's top edge — the "important
+   * card" treatment (agent showcase cards, hero panels). border-radius
+   * inherit means a rounded-xl parent gets a matching rounded bar. */
+  .gradient-border-top {
+    position: relative;
+  }
+  .gradient-border-top::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    border-radius: inherit;
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--secondary)));
+  }
+
+  /* Skeleton loading shimmer. */
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--elevated)) 25%,
+      hsl(var(--accent)) 37%,
+      hsl(var(--elevated)) 63%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* Soft ambient glow behind hero sections / empty states. */
+  .glow-ambient {
+    background: radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.22) 0%, transparent 70%);
+  }
+
+  /* Animated gradient background for hero sections (landing page,
+   * login split-panel) — a slow drift, never distracting. */
+  @keyframes gradient-drift {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+  .bg-gradient-animated {
+    background: linear-gradient(
+      120deg,
+      hsl(var(--background)) 0%,
+      hsl(var(--primary) / 0.15) 25%,
+      hsl(var(--background)) 50%,
+      hsl(var(--secondary) / 0.15) 75%,
+      hsl(var(--background)) 100%
+    );
+    background-size: 200% 200%;
+    animation: gradient-drift 18s ease-in-out infinite;
+  }
+
+  /* Gradient text — headline treatment used sparingly per the design
+   * system (hero titles, key numbers). */
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Floating soft blobs for hero/login backgrounds. */
+  @keyframes blob-float {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    33% {
+      transform: translate(4%, -6%) scale(1.08);
+    }
+    66% {
+      transform: translate(-3%, 4%) scale(0.96);
+    }
+  }
+  .animate-blob {
+    animation: blob-float 14s ease-in-out infinite;
+  }
+}
+
+/* ----------------------------------------------------------------------
+ * Sonner toast redesign — gradient left border + tighter glass surface.
+ * Targets Sonner's own data attributes rather than a wrapper class, so
+ * every existing toast.success/error/etc. call site (all untouched)
+ * picks this up automatically.
+ * -------------------------------------------------------------------- */
+[data-sonner-toast] {
+  border-radius: var(--radius) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  background: hsl(var(--elevated) / 0.95) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 16px 40px -16px hsl(225 60% 2% / 0.7) !important;
+  border-left-width: 3px !important;
+}
+[data-sonner-toast][data-type="success"] {
+  border-left-color: hsl(var(--success)) !important;
+}
+[data-sonner-toast][data-type="error"] {
+  border-left-color: hsl(var(--destructive)) !important;
+}
+[data-sonner-toast][data-type="warning"] {
+  border-left-color: hsl(var(--warning)) !important;
+}
+[data-sonner-toast][data-type="info"] {
+  border-left-color: hsl(var(--secondary)) !important;
 }

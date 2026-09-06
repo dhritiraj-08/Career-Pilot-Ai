@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { FirstVisitHelpTooltip } from "@/components/dashboard/first-visit-help-tooltip";
 
 /**
  * Shared shell for every /dashboard/* page (dashboard, profile,
@@ -30,7 +31,7 @@ export default async function DashboardLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, avatar_url")
+    .select("full_name, avatar_url, xp")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -39,7 +40,9 @@ export default async function DashboardLayout({
       fullName={profile?.full_name ?? ""}
       avatarUrl={profile?.avatar_url ?? null}
       email={user.email ?? null}
+      xp={profile?.xp ?? 0}
     >
+      <FirstVisitHelpTooltip />
       {children}
     </DashboardShell>
   );

@@ -20,6 +20,10 @@ const config: Config = {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",
         },
+        elevated: {
+          DEFAULT: "hsl(var(--elevated))",
+          foreground: "hsl(var(--elevated-foreground))",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -82,6 +86,11 @@ const config: Config = {
         base: "250ms",
         slow: "400ms",
         slower: "600ms",
+      },
+      boxShadow: {
+        glow: "0 0 24px hsl(var(--primary) / 0.35)",
+        "glow-cyan": "0 0 24px hsl(var(--secondary) / 0.35)",
+        card: "0 12px 32px -12px hsl(225 60% 2% / 0.6)",
       },
     },
   },

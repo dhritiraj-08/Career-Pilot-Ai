@@ -66,6 +66,7 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-6xl px-4 py-8">
       <DashboardContent
         fullName={profile?.full_name ?? ""}
+        avatarUrl={profile?.avatar_url ?? null}
         completionPercent={percent}
         completionItems={items}
         stats={{

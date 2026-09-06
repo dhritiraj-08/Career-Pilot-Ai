@@ -13,7 +13,7 @@ export function ProfileStrengthCard({ percent, items }: ProfileStrengthCardProps
   const missing = items.filter((item) => !item.done);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="card-hover rounded-xl border border-border bg-card p-5">
       <h3 className="font-heading text-base font-semibold text-foreground">Your profile strength</h3>
 
       <div className="mt-4 flex items-center gap-4">

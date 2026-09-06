@@ -4,49 +4,55 @@ A futuristic, minimalist dark theme. Deep neutral backgrounds, one violet-blue
 primary and one cyan secondary, generous negative space, and motion used
 sparingly to signal "AI is working" rather than for decoration.
 
+> **Revamp note:** the palette below was retuned in the full visual revamp
+> (agent rebrand — Nexus/Radar/Mentor/Hermes/Atlas/Aria — plus glass
+> morphism, dot-grid backgrounds, gradient borders, and animated counters).
+> Backend/API behavior was untouched; this section documents the *current*
+> color values, which shifted slightly bluer/deeper than the originals.
+
 ---
 
 ## 1. Colors
 
 ### Background layers (dark, 3 levels of depth)
 
-| Token | Hex | Use |
-|---|---|---|
-| `--bg-base` | `#05070A` | App shell / page background — near-black, slight blue cast |
-| `--bg-surface` | `#0C1016` | Cards, panels, sidebar |
-| `--bg-elevated` | `#141A22` | Modals, dropdowns, popovers, hover state on cards |
+| Token | Hex | HSL | Use |
+|---|---|---|---|
+| `--background` | `#080B14` | `225 43% 5%` | App shell / page background — near-black, blue cast |
+| `--card` | `#0F1320` | `226 36% 9%` | Cards, panels, sidebar |
+| `--elevated` | `#141825` | `226 30% 11%` | Modals, dropdowns, popovers, raised/hover cards |
 
 ### Accents
 
-| Token | Hex | Use |
-|---|---|---|
-| `--accent-primary` | `#7C5CFC` | Primary actions, active nav item, focus rings, key stats |
-| `--accent-primary-hover` | `#8F73FF` | Hover state of primary |
-| `--accent-secondary` | `#00D4FF` | Secondary CTAs, AI/agent indicators, links, highlights |
-| `--accent-secondary-hover` | `#33DFFF` | Hover state of secondary |
+| Token | Hex | HSL | Use |
+|---|---|---|---|
+| `--primary` | `#7C5CFC` | `252 96% 67%` | Primary actions, active nav item, focus rings, key stats |
+| `--secondary` | `#00D4FF` | `190 100% 50%` | Secondary CTAs, AI/agent indicators, links, highlights |
+
+Gradient (`violet → cyan`) is used liberally per the revamp: CTA buttons,
+agent icon backgrounds, the active sidebar item, hero headline text.
 
 ### Status
 
-| Token | Hex | Use |
-|---|---|---|
-| `--success` | `#22C55E` | Completed, applied, passed |
-| `--warning` | `#F5A623` | Pending, needs attention, expiring soon |
-| `--error` | `#F5455C` | Failed, rejected, blocking error |
+| Token | Hex | HSL | Use |
+|---|---|---|---|
+| `--success` | `#10B981` | `160 84% 39%` | Completed, applied, passed, sent |
+| `--warning` | `#F59E0B` | `38 92% 50%` | Pending, needs attention, awaiting approval |
+| `--destructive` | `#EF4444` | `0 84% 60%` | Failed, rejected, blocking error |
 
 ### Text
 
-| Token | Hex | Use |
-|---|---|---|
-| `--text-primary` | `#F5F7FA` | Headings, primary body text |
-| `--text-secondary` | `#A3AEC2` | Secondary copy, descriptions |
-| `--text-muted` | `#5C6B82` | Timestamps, placeholders, disabled text |
+| Token | Hex | HSL | Use |
+|---|---|---|---|
+| `--foreground` | `#F5F7FA` | `216 33% 97%` | Headings, primary body text |
+| `--muted-foreground` | `#6B7280` | `220 9% 46%` | Secondary copy, timestamps, placeholders |
 
 ### Borders
 
-| Token | Hex | Use |
-|---|---|---|
-| `--border-subtle` | `#1B222C` | Default card/input borders |
-| `--border-strong` | `#2A3341` | Hover/focus borders, dividers that need to read clearly |
+| Token | Hex | HSL | Use |
+|---|---|---|---|
+| `--border` | `#1E2433` | `223 26% 16%` | Default card/input borders |
+| `--border-strong` | — | `223 24% 26%` | Hover/focus borders, dividers that need to read clearly |
 
 ### Gradients
 
@@ -178,6 +184,26 @@ export const hoverLift = {
   whileHover: { y: -2, transition: { duration: 0.15, ease: [0.4, 0, 0.2, 1] } },
 };
 ```
+
+### Revamp utility classes (globals.css)
+
+Added in the visual revamp, available anywhere as plain Tailwind-adjacent
+utility classes (no import needed):
+
+| Class | What it does |
+|---|---|
+| `.bg-dot-grid` | Faint dot-grid background texture |
+| `.glass` | Glass morphism surface (blurred, translucent) |
+| `.card-hover` | Standard lift + shadow + border-brighten on hover |
+| `.gradient-border-top` | 2px violet→cyan hairline along a card's top edge |
+| `.skeleton` | Shimmering skeleton-loading gradient |
+| `.glow-ambient` | Soft radial glow behind hero/empty-state content |
+| `.bg-gradient-animated` | Slow-drifting gradient background (hero/login) |
+| `.text-gradient` | Violet→cyan gradient text-fill |
+| `.animate-blob` | Slow floating drift, for background blob shapes |
+
+`lib/use-count-up.ts` animates a number counting up on mount/change —
+used by every dashboard stat tile.
 
 ---
 

@@ -32,3 +32,10 @@ export const pulseGlow: Variants = {
     transition: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
   },
 };
+
+// Card hover lift — documented in docs/design-system.md §4 but never
+// actually added here until the visual revamp. Spread directly onto a
+// motion component: <motion.div {...hoverLift}>.
+export const hoverLift = {
+  whileHover: { y: -4, transition: { duration: 0.2, ease: [0.4, 0, 0.2, 1] as const } },
+};
